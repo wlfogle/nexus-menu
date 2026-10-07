@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: fmt / clippy / test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test
+
+  validate:
+    name: generated entries pass desktop-file-validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Install desktop-file-utils
+        run: sudo apt-get update && sudo apt-get install -y desktop-file-utils
+
+      - name: Build
+        run: cargo build --release
+
+      # Render an entry for EVERY template, not just the ones that happen to
+      # be installed on the runner. `create --force` bypasses the
+      # already-has-an-entry check, so this proves no template in the catalog
+      # can produce a non-conforming entry.
+      - name: Render an entry for every catalog template
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/entries /tmp/stubbin
+
+          ./target/release/kappfinder-rs catalog \
+            | sed -n 's/^  \([^ ]\+\) .*/\1/p' > /tmp/bins.txt
+          expected=$(wc -l < /tmp/bins.txt)
+          echo "catalog advertises $expected templates"
+          test "$expected" -gt 0
+
+          # Stub executable per catalogued binary so each resolves on $PATH.
+          while read -r bin; do
+            [ -n "$bin" ] || continue
+            printf '#!/bin/sh\nexit 0\n' > "/tmp/stubbin/$bin"
+            chmod +x "/tmp/stubbin/$bin"
+          done < /tmp/bins.txt
+
+          PATH="/tmp/stubbin:$PATH" ./target/release/kappfinder-rs \
+            --dir /tmp/entries create --force $(tr '\n' ' ' < /tmp/bins.txt)
+
+          actual=$(ls -1 /tmp/entries/*.desktop | wc -l)
+          echo "rendered $actual entries"
+          test "$actual" -eq "$expected"
+
+      # desktop-file-validate exits 0 for hints and warnings, so treat any
+      # output at all as a failure.
+      - name: Validate every generated entry
+        run: |
+          set -euo pipefail
+          output=$(desktop-file-validate /tmp/entries/*.desktop 2>&1 || true)
+          if [ -n "$output" ]; then
+            echo "desktop-file-validate reported problems:"
+            echo "$output"
+            exit 1
+          fi
+          echo "all entries valid: no errors, warnings, or hints"
