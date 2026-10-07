@@ -14,6 +14,19 @@ Nothing replaced the specific job it did, so this does.
 
 ---
 
+**Getting started:** [Requirements](#requirements) ·
+[Install](#install) · [First run](#first-run) · [Usage](#usage)
+
+**Reference:** [Global options](#global-options) ·
+[Environment](#environment) · [Exit codes](#exit-codes) ·
+[Catalog contents](#whats-in-the-catalog) ·
+[Extending the catalog](#extending-the-catalog)
+
+**Help:** [Troubleshooting](#troubleshooting) · [Safety](#safety) ·
+[Limitations](#limitations) · [Contributing](#contributing)
+
+---
+
 ## The problem
 
 You install `btop` from a repo, drop a vendor binary in `/opt`, or pull in
@@ -92,6 +105,14 @@ Each release also ships a `.sha256` file:
 sha256sum -c kappfinder-rs-*.tar.gz.sha256
 ```
 
+### With cargo
+
+```fish
+cargo install --git https://github.com/wlfogle/kappfinder-rs
+```
+
+This puts the binary in `~/.cargo/bin`.
+
 ### From source
 
 ```fish
@@ -101,7 +122,67 @@ cargo build --release
 install -Dm755 target/release/kappfinder-rs ~/.local/bin/kappfinder-rs
 ```
 
-Either way, make sure `~/.local/bin` is on your `$PATH`.
+### Put it on your PATH
+
+`~/.local/bin` is not on `$PATH` by default on every distribution.
+
+```fish
+# fish — persistent, no config editing
+fish_add_path ~/.local/bin
+```
+
+```bash
+# bash / zsh — add to ~/.bashrc or ~/.zshrc
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Confirm it worked:
+
+```fish
+kappfinder-rs --version
+```
+
+### Uninstalling
+
+Remove any menu entries the tool created **before** deleting the binary,
+since `remove` is what knows which files are its own:
+
+```fish
+kappfinder-rs remove
+rm ~/.local/bin/kappfinder-rs        # or: cargo uninstall kappfinder-rs
+rm -rf ~/.config/kappfinder-rs       # only if you made a user catalog
+```
+
+## First run
+
+The normal sequence is look, then decide, then apply.
+
+```fish
+# 1. See what is missing. This writes nothing.
+kappfinder-rs
+
+# 2. See exactly what would be written, still without writing it.
+kappfinder-rs install --dry-run
+
+# 3. Apply, choosing from a numbered list.
+kappfinder-rs install
+```
+
+Step 3 prompts:
+
+```console
+Create which entries? [all / none / e.g. 1,3,5-7] (default: all):
+```
+
+Accepted answers:
+
+| Answer | Effect |
+| --- | --- |
+| empty, `a`, `all` | every listed entry |
+| `n`, `no`, `none`, `q` | nothing |
+| `1,3,5-7` | those positions; ranges and lists can be mixed |
+
+Changed your mind? `kappfinder-rs remove` deletes everything it created.
 
 ## Usage
 
@@ -176,11 +257,37 @@ kappfinder-rs catalog --missing      # templates whose binary isn't installed
 
 ## Global options
 
+These work before or after the subcommand.
+
 | Flag | Meaning |
 | --- | --- |
 | `--dir DIR` | Write entries here instead of `$XDG_DATA_HOME/applications` |
 | `--catalog FILE` | Use this user catalog instead of the default path |
 | `--ignore-nodisplay` | Treat `NoDisplay`/`Hidden` entries as missing |
+| `-h`, `--help` | Full help; `kappfinder-rs help <command>` for one command |
+| `-V`, `--version` | Print the version |
+
+## Environment
+
+Behaviour follows the XDG base directory specification:
+
+| Variable | Used for | Default |
+| --- | --- | --- |
+| `PATH` | Where installed programs are looked up | — |
+| `XDG_DATA_HOME` | Where entries are written | `~/.local/share` |
+| `XDG_DATA_DIRS` | Searched for existing entries | `/usr/local/share:/usr/share` |
+| `XDG_CONFIG_HOME` | Where the user catalog is read from | `~/.config` |
+
+Flatpak and Snap export directories are also searched for existing entries,
+even when they are absent from `XDG_DATA_DIRS`.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success, including "nothing to do" and declining at the prompt |
+| `1` | Runtime error, e.g. a named binary is not on `$PATH` |
+| `2` | Bad command line — unknown flag or missing argument |
 
 ## What's in the catalog
 
@@ -291,6 +398,80 @@ desktop-file-validate $T/*.desktop    # zero errors, warnings, and hints
 | `src/scanner.rs` | `$PATH` resolution, executable detection, orphan noise filter |
 | `src/select.rs` | Interactive numbered-list selection and confirmation |
 | `src/main.rs` | CLI and command implementations |
+
+## Troubleshooting
+
+### The entry was created but does not appear in my menu
+
+Confirm it was actually written and is valid:
+
+```fish
+ls ~/.local/share/applications/
+desktop-file-validate ~/.local/share/applications/thatapp.desktop
+```
+
+Then nudge the desktop. Most environments notice new files on their own, but
+caches sometimes need a push:
+
+```fish
+update-desktop-database ~/.local/share/applications
+kbuildsycoca6                      # KDE Plasma 6 (kbuildsycoca5 on Plasma 5)
+```
+
+If it still does not show up, log out and back in. A fresh session rebuilds
+the menu unconditionally.
+
+### A terminal application opens and closes instantly
+
+Entries for TUI programs carry `Terminal=true`, which asks the desktop to run
+them inside your terminal emulator. If no default terminal is configured, the
+launcher has nowhere to put them. Set a default terminal in your desktop
+settings, or edit the entry's `Exec=` to invoke your terminal directly:
+
+```ini
+Exec=alacritty -e /usr/bin/htop
+```
+
+### The entry has a generic or missing icon
+
+`Icon=` holds an icon *theme name*, not a file path, and not every theme has
+an icon for every application. Point it at a file instead:
+
+```ini
+Icon=/usr/share/pixmaps/thatapp.png
+```
+
+Your edit survives: `remove` keys off the `X-KAppFinder-Generated` marker,
+not the file contents.
+
+### `scan` says a program is already in the menu, but I cannot find it
+
+The existing entry is probably marked `NoDisplay=true` or `Hidden=true`,
+which keeps it out of menus while still occupying the slot. To get a visible
+entry anyway:
+
+```fish
+kappfinder-rs --ignore-nodisplay install
+```
+
+### I want an entry for something not in the catalog
+
+```fish
+kappfinder-rs create thatprogram
+```
+
+If you will want it on other machines too, add it to your user catalog at
+`~/.config/kappfinder-rs/catalog.toml` instead — see
+[Extending the catalog](#extending-the-catalog).
+
+### I want to undo everything
+
+```fish
+kappfinder-rs remove --dry-run     # check first
+kappfinder-rs remove
+```
+
+Only files this tool generated are touched.
 
 ## Limitations
 
