@@ -315,6 +315,34 @@ const NOISE_NAMES: &[&str] = &[
     "sudo",
     "su",
     "doas",
+    // Daemons. These are listed explicitly rather than matched by a trailing
+    // "d", because that suffix also catches real applications such as
+    // `xclipboard`, `xload`, `kicad`, and `freecad`.
+    "systemd",
+    "sshd",
+    "httpd",
+    "crond",
+    "atd",
+    "inetd",
+    "xinetd",
+    "syslogd",
+    "rsyslogd",
+    "klogd",
+    "cupsd",
+    "dockerd",
+    "containerd",
+    "ntpd",
+    "chronyd",
+    "smbd",
+    "nmbd",
+    "named",
+    "udevd",
+    "acpid",
+    "polkitd",
+    "lightdm",
+    "gdm3",
+    "sddm",
+    "mpd",
 ];
 
 /// Substrings and affixes that reliably indicate a non-interactive helper.
@@ -341,9 +369,15 @@ const NOISE_PREFIXES: &[&str] = &[
     "kf6",
 ];
 
+/// Trailing fragments that reliably indicate a non-interactive helper.
+///
+/// Deliberately conservative. A bare `"d"` would catch most daemons but also
+/// `xclipboard`, `xload`, `kicad`, and `freecad`, so daemons are enumerated in
+/// [`NOISE_NAMES`] instead. Likewise a bare `"config"` would catch any
+/// application whose name happens to end that way.
 const NOISE_SUFFIXES: &[&str] = &[
-    "-config", "config", "-devel", "-dev", ".sh", ".py", ".pl", ".rb", "ctl", "d", "stat", "-cli",
-    "-server", "-daemon", "-agent", "-helper", "-wrapper", "-shim",
+    "-config", "-devel", "-dev", ".sh", ".py", ".pl", ".rb", "ctl", "-cli", "-server", "-daemon",
+    "-agent", "-helper", "-wrapper", "-shim",
 ];
 
 /// Heuristic: would this binary almost certainly be junk in an application menu?
@@ -368,7 +402,8 @@ pub fn looks_like_noise(name: &str) -> bool {
     if NOISE_PREFIXES.iter().any(|p| name.starts_with(p)) {
         return true;
     }
-    // `d` and `ctl` suffixes only count for names long enough to be meaningful.
+    // Require a couple of characters before the suffix so that short names
+    // are not swallowed by a fragment that makes up most of the word.
     if NOISE_SUFFIXES
         .iter()
         .any(|s| name.len() > s.len() + 2 && name.ends_with(s))
@@ -397,9 +432,54 @@ mod tests {
     }
 
     #[test]
+    fn keeps_applications_whose_name_ends_in_d() {
+        // Regression: a bare "d" suffix rule used to classify these as
+        // daemons and hide them from the orphan report.
+        for name in ["xclipboard", "xload", "kicad", "freecad"] {
+            assert!(!looks_like_noise(name), "{name} should NOT be filtered");
+        }
+    }
+
+    #[test]
+    fn still_filters_actual_daemons() {
+        for name in ["sshd", "cupsd", "dockerd", "containerd", "systemd", "mpd"] {
+            assert!(looks_like_noise(name), "{name} should be filtered");
+        }
+    }
+
+    #[test]
+    fn keeps_applications_whose_name_ends_in_config_or_stat() {
+        // Bare "config"/"stat" suffixes were similarly over-broad. The real
+        // offenders (`ifconfig`, `netstat`) are matched by exact name.
+        for name in ["gtkconfig", "xstat"] {
+            assert!(!looks_like_noise(name), "{name} should NOT be filtered");
+        }
+        assert!(looks_like_noise("ifconfig"));
+        assert!(looks_like_noise("netstat"));
+    }
+
+    #[test]
     fn versioned_names_are_noise() {
         assert!(looks_like_noise("gcc-12"));
         assert!(looks_like_noise("llvm-ar-15"));
+    }
+
+    #[test]
+    fn no_catalogued_application_is_filtered_as_noise() {
+        // The catalog is the ground truth for "this is a real application".
+        // If the heuristic filter disagrees with it, the filter is wrong.
+        let catalog = crate::catalog::Catalog::load(None).unwrap();
+        let mut wrongly_filtered: Vec<&str> = catalog
+            .apps
+            .keys()
+            .filter(|bin| looks_like_noise(bin))
+            .map(String::as_str)
+            .collect();
+        wrongly_filtered.sort_unstable();
+        assert!(
+            wrongly_filtered.is_empty(),
+            "catalogued applications wrongly classified as noise: {wrongly_filtered:?}"
+        );
     }
 
     #[test]

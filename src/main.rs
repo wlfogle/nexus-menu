@@ -74,7 +74,7 @@ enum Cmd {
         /// Do not filter out coreutils, libraries, and other obvious non-apps
         #[arg(long)]
         no_filter: bool,
-        /// Show at most this many results
+        /// Show at most this many results (0 means no limit)
         #[arg(long, value_name = "N")]
         limit: Option<usize>,
     },
@@ -117,6 +117,8 @@ struct Candidate {
 }
 
 fn main() -> ExitCode {
+    restore_default_sigpipe();
+
     let cli = Cli::parse();
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
@@ -124,6 +126,23 @@ fn main() -> ExitCode {
             eprintln!("error: {err:#}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// Restore the default disposition of `SIGPIPE`.
+///
+/// The Rust runtime sets `SIGPIPE` to `SIG_IGN` before `main`, which turns a
+/// closed downstream pipe into an `EPIPE` write error — and `println!` panics
+/// on write errors. Without this, the perfectly ordinary
+/// `kappfinder-rs orphans | head` aborts with a panic message instead of
+/// exiting quietly. Dying on `SIGPIPE` is the correct behaviour for a CLI
+/// that streams a long listing to stdout.
+fn restore_default_sigpipe() {
+    // SAFETY: called once at the very start of `main`, before any threads
+    // exist. Installing SIG_DFL for SIGPIPE is async-signal-safe and is the
+    // standard remedy used by Unix CLI tools written in Rust.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
 }
 
@@ -152,9 +171,13 @@ fn run(cli: Cli) -> Result<()> {
             dry_run,
             force,
         ),
-        Cmd::Orphans { no_filter, limit } => {
-            cmd_orphans(&target_dir, cli.ignore_nodisplay, no_filter, limit)
-        }
+        Cmd::Orphans { no_filter, limit } => cmd_orphans(
+            &catalog,
+            &target_dir,
+            cli.ignore_nodisplay,
+            no_filter,
+            limit,
+        ),
         Cmd::Create {
             bins,
             force,
@@ -319,6 +342,7 @@ fn cmd_install(
 }
 
 fn cmd_orphans(
+    catalog: &Catalog,
     target_dir: &Path,
     ignore_nodisplay: bool,
     no_filter: bool,
@@ -330,12 +354,20 @@ fn cmd_orphans(
     let mut orphans: Vec<(&String, &PathBuf)> = executables
         .iter()
         .filter(|(name, _)| registry.covers(name).is_none())
-        .filter(|(name, _)| no_filter || !scanner::looks_like_noise(name))
+        // A catalogued program is a known application by definition, so the
+        // heuristic filter never gets to hide one.
+        .filter(|(name, _)| {
+            no_filter || catalog.get(name.as_str()).is_some() || !scanner::looks_like_noise(name)
+        })
         .collect();
     orphans.sort_by(|a, b| a.0.cmp(b.0));
 
     let total = orphans.len();
-    let shown = limit.unwrap_or(total).min(total);
+    // `--limit 0` reads as "no limit", not "show nothing".
+    let shown = match limit {
+        None | Some(0) => total,
+        Some(n) => n.min(total),
+    };
 
     println!(
         "{} of {} executables on $PATH have no menu entry{}.\n",
@@ -533,7 +565,11 @@ fn write_entry(
     // crash can never leave a half-written entry in the menu.
     let tmp = path.with_extension("desktop.tmp");
     fs::write(&tmp, contents).with_context(|| format!("writing {}", tmp.display()))?;
-    fs::rename(&tmp, &path).with_context(|| format!("installing {}", path.display()))?;
+    if let Err(err) = fs::rename(&tmp, &path) {
+        // Do not leave the partial file lying around in an applications dir.
+        let _ = fs::remove_file(&tmp);
+        return Err(err).with_context(|| format!("installing {}", path.display()));
+    }
 
     Ok(Outcome::Created(path))
 }

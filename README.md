@@ -120,11 +120,16 @@ kappfinder-rs create /opt/vendor/bin/thing
 ### List binaries with no entry
 
 ```fish
-kappfinder-rs orphans --limit 50
+kappfinder-rs orphans                # filtered
+kappfinder-rs orphans --limit 50     # cap the listing (0 means no limit)
 kappfinder-rs orphans --no-filter    # include coreutils, libraries, etc.
 ```
 
-Read-only and heuristic. Treat it as a starting point, not a worklist.
+Read-only and heuristic. Treat it as a starting point, not a worklist — on a
+typical desktop it still returns several thousand entries.
+
+The noise filter is never applied to a catalogued program: the catalog is the
+ground truth for "this is a real application", so those always appear.
 
 ### Undo
 
@@ -224,14 +229,17 @@ Matching is by, in order:
 ## Correctness
 
 ```fish
-cargo test                                  # 37 unit tests
+cargo test                                  # 41 unit tests
 cargo clippy --all-targets -- -D warnings
+cargo fmt --check
 ```
 
 Tests cover `Exec` tokenising and wrapper unwrapping, Desktop Entry
 escape/unescape round-tripping, selection-expression parsing, filename
-sanitising, and catalog invariants — exactly one main category per entry,
-`Audio`/`Video` always paired with `AudioVideo`, and no duplicate categories.
+sanitising, catalog invariants (exactly one main category per entry,
+`Audio`/`Video` always paired with `AudioVideo`, no duplicate categories),
+and consistency between the catalog and the orphan noise filter — no
+catalogued application may be classified as noise.
 
 CI additionally renders an entry for **every one of the 117 templates** — not
 just the ones installed on the runner — and runs `desktop-file-validate` over
@@ -266,10 +274,23 @@ desktop-file-validate $T/*.desktop    # zero errors, warnings, and hints
 ## Limitations
 
 - Linux/Unix only.
-- The `orphans` filter is heuristic and will have false positives and
-  negatives. It is deliberately kept out of the catalog-driven path, which is
-  exact.
+- The `orphans` filter is heuristic by nature and will have false positives
+  and negatives. It is deliberately kept out of the catalog-driven path,
+  which is exact.
+- Flatpak entries launch via `Exec=flatpak run <app-id>`, which resolves to
+  the program `flatpak` rather than the application itself. A Flatpak install
+  of a program therefore does not suppress an entry for a native binary of
+  the same name.
 - Icons are theme names, so an application with no themed icon falls back to a
+  generic one.
+
+## Project documentation
+
+- [CHANGELOG.md](CHANGELOG.md) — released and unreleased changes
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to add catalog entries, including
+  the category rules the tests enforce
+- [data/catalog.toml](data/catalog.toml) — the catalog itself, documented
+  inline
   generic one.
 
 ## Contributing
