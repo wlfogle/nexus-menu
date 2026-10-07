@@ -11,7 +11,7 @@ cd nexus-menu
 make check
 ```
 
-Rust 1.74 or newer. `desktop-file-utils` is worth installing locally so you
+Rust 1.85 or newer. `desktop-file-utils` is worth installing locally so you
 can validate entries the same way CI does — `make validate` uses it.
 
 ## Adding a catalog entry

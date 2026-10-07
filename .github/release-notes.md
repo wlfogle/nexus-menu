@@ -26,7 +26,7 @@ Verify the download first if you like:
 sha256sum -c nexus-menu-*.tar.gz.sha256
 ```
 
-Or build from source with `cargo build --release` (Rust 1.74+).
+Or build from source with `cargo build --release` (Rust 1.85+).
 
 ## Quick start
 

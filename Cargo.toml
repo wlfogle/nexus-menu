@@ -2,7 +2,7 @@
 name = "nexus-menu"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.74"
+rust-version = "1.85"
 description = "Finds installed applications with no menu entry and generates freedesktop .desktop files for them (a maintained KAppFinder equivalent)"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/wlfogle/nexus-menu"

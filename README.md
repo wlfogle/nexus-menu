@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/wlfogle/nexus-menu/actions/workflows/ci.yml/badge.svg)](https://github.com/wlfogle/nexus-menu/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.74%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 [![Platform](https://img.shields.io/badge/platform-Linux-lightgrey.svg)](#requirements)
 
 **Finds installed applications that have no menu entry, and creates one.**
@@ -79,7 +79,7 @@ never creates anything.
 ## Requirements
 
 - Linux or another Unix (executable detection uses Unix permission bits)
-- Rust 1.74+ to build
+- Rust 1.85+ to build from source (the prebuilt binary needs no Rust)
 - `desktop-file-utils` — **optional**, only used to refresh the desktop
   database after writing
 

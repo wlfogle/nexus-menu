@@ -60,6 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   frequently omits `~/.local/bin`, which would otherwise break the launcher
   for user-local installs.
 
+### Fixed
+- The documented and declared minimum Rust version was wrong. The README,
+  `CONTRIBUTING.md` and `Cargo.toml` said 1.74, but the locked dependencies
+  (`clap`, `indexmap` and `hashbrown` among them) require 1.85, so a 1.74
+  toolchain could not build the project. The minimum is now 1.85, confirmed
+  by running the full test suite on Rust 1.85.0 with `--locked`.
+
 ### Verification
 - CI now validates the launcher with `desktop-file-validate` both as
   committed and as installed, failing on any output including hints, and
