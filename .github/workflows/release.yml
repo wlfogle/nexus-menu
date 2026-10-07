@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and publish"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: x86_64-unknown-linux-musl
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      # A tag that disagrees with the manifest produces an artifact whose
+      # --version output contradicts its own filename. Refuse to publish it.
+      - name: Verify tag matches Cargo.toml
+        run: |
+          set -euo pipefail
+          manifest=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          tagged="${{ steps.version.outputs.version }}"
+          echo "manifest=$manifest tag=$tagged"
+          if [ "$manifest" != "$tagged" ]; then
+            echo "::error::Cargo.toml says $manifest but the tag says $tagged"
+            exit 1
+          fi
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add "$TARGET"
+
+      - name: Test
+        run: cargo test
+
+      - name: Build static binary
+        run: cargo build --release --locked --target "$TARGET"
+
+      # The whole point of the musl target here is an artifact that runs on
+      # any x86_64 Linux regardless of glibc version. Prove it is static.
+      - name: Verify the binary is statically linked
+        run: |
+          set -euo pipefail
+          bin="target/$TARGET/release/kappfinder-rs"
+          file "$bin"
+          if ! file "$bin" | grep -q "static"; then
+            echo "::error::binary is not statically linked"
+            exit 1
+          fi
+          "$bin" --version
+
+      - name: Validate every catalog template
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y desktop-file-utils
+          bin="$PWD/target/$TARGET/release/kappfinder-rs"
+          mkdir -p /tmp/entries /tmp/stubbin
+          "$bin" catalog | sed -n 's/^  \([^ ]\+\) .*/\1/p' > /tmp/bins.txt
+          while read -r b; do
+            [ -n "$b" ] || continue
+            printf '#!/bin/sh\nexit 0\n' > "/tmp/stubbin/$b"
+            chmod +x "/tmp/stubbin/$b"
+          done < /tmp/bins.txt
+          PATH="/tmp/stubbin:$PATH" "$bin" --dir /tmp/entries \
+            create --force $(tr '\n' ' ' < /tmp/bins.txt)
+          out=$(desktop-file-validate /tmp/entries/*.desktop 2>&1 || true)
+          if [ -n "$out" ]; then
+            echo "::error::desktop-file-validate reported problems"
+            echo "$out"
+            exit 1
+          fi
+          echo "all $(ls -1 /tmp/entries/*.desktop | wc -l) entries valid"
+
+      - name: Package
+        id: package
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          name="kappfinder-rs-$version-$TARGET"
+          mkdir -p "dist/$name"
+          cp "target/$TARGET/release/kappfinder-rs" "dist/$name/"
+          cp README.md LICENSE CHANGELOG.md "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          ( cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256" )
+          echo "archive=dist/$name.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "checksum=dist/$name.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+          ls -l dist
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.version.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" \
+              "${{ steps.package.outputs.archive }}" \
+              "${{ steps.package.outputs.checksum }}" --clobber
+          else
+            gh release create "$tag" \
+              --title "$tag" \
+              --notes-file .github/release-notes.md \
+              "${{ steps.package.outputs.archive }}" \
+              "${{ steps.package.outputs.checksum }}"
+          fi

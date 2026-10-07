@@ -73,6 +73,27 @@ Cinnamon, LXQt, Budgie, and tiling WMs that read `.desktop` files.
 
 ## Install
 
+### Prebuilt binary
+
+Grab the archive from the
+[latest release](https://github.com/wlfogle/kappfinder-rs/releases/latest).
+It is statically linked, so it has no glibc version requirement and runs on
+any x86_64 Linux.
+
+```fish
+tar xzf kappfinder-rs-*-x86_64-unknown-linux-musl.tar.gz
+cd kappfinder-rs-*-x86_64-unknown-linux-musl
+install -Dm755 kappfinder-rs ~/.local/bin/kappfinder-rs
+```
+
+Each release also ships a `.sha256` file:
+
+```fish
+sha256sum -c kappfinder-rs-*.tar.gz.sha256
+```
+
+### From source
+
 ```fish
 git clone https://github.com/wlfogle/kappfinder-rs.git
 cd kappfinder-rs
@@ -80,7 +101,7 @@ cargo build --release
 install -Dm755 target/release/kappfinder-rs ~/.local/bin/kappfinder-rs
 ```
 
-Make sure `~/.local/bin` is on your `$PATH`.
+Either way, make sure `~/.local/bin` is on your `$PATH`.
 
 ## Usage
 
