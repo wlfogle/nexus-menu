@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  kappfinder-rs application icon.
+  nexus-menu application icon.
 
   An application grid with one tile missing, under a magnifier: the whole job
   of the tool in one picture. Drawn on the 48x48 grid the hicolor scalable
@@ -8,7 +8,7 @@
   menu renders it at 16px.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
-  <title>kappfinder-rs</title>
+  <title>nexus-menu</title>
   <!-- Applications that already have a menu entry. -->
   <g fill="#3584e4">
     <rect x="4" y="4" width="12" height="12" rx="3"/>

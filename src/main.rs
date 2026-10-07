@@ -1,4 +1,4 @@
-//! kappfinder-rs — find installed applications that have no menu entry and
+//! nexus-menu — find installed applications that have no menu entry and
 //! generate freedesktop `.desktop` files for them.
 //!
 //! A maintained, desktop-agnostic reimplementation of KDE's long-dead
@@ -8,26 +8,30 @@
 
 mod catalog;
 mod desktop;
+mod prefixes;
 mod registry;
 mod scanner;
 mod select;
 
+use std::env;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::Shell;
 
 use catalog::{AppTemplate, Catalog, Source};
 use registry::Registry;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "kappfinder-rs",
+    name = "nexus-menu",
     version,
     about = "Find installed applications with no menu entry and create one",
-    long_about = "kappfinder-rs scans $PATH for programs it has templates for, checks \
+    long_about = "nexus-menu scans $PATH for programs it has templates for, checks \
                   whether each already has a .desktop entry anywhere in the XDG \
                   application directories, and generates entries for the ones that do not.\n\n\
                   With no subcommand it performs a read-only scan and reports findings."
@@ -39,7 +43,7 @@ struct Cli {
     dir: Option<PathBuf>,
 
     /// Extra catalog file to overlay on the built-in one
-    /// [default: $XDG_CONFIG_HOME/kappfinder-rs/catalog.toml]
+    /// [default: $XDG_CONFIG_HOME/nexus-menu/catalog.toml]
     #[arg(long, value_name = "FILE", global = true)]
     catalog: Option<PathBuf>,
 
@@ -108,6 +112,30 @@ enum Cmd {
         #[arg(long)]
         missing: bool,
     },
+
+    /// Print a shell completion script to stdout
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+
+    /// Work with Windows applications in Wine prefixes and game launchers
+    Wine {
+        /// Extra prefix, or a directory to search for prefixes (repeatable)
+        #[arg(long = "prefix", value_name = "DIR", global = true)]
+        prefixes: Vec<PathBuf>,
+
+        #[command(subcommand)]
+        action: WineCmd,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum WineCmd {
+    /// List Wine prefixes: top-level hidden folders in your home directory,
+    /// plus those Faugus, PortProton, Lutris and Heroic declare
+    Prefixes,
 }
 
 /// A catalogued application that is installed but has no menu entry.
@@ -134,7 +162,7 @@ fn main() -> ExitCode {
 /// The Rust runtime sets `SIGPIPE` to `SIG_IGN` before `main`, which turns a
 /// closed downstream pipe into an `EPIPE` write error — and `println!` panics
 /// on write errors. Without this, the perfectly ordinary
-/// `kappfinder-rs orphans | head` aborts with a panic message instead of
+/// `nexus-menu orphans | head` aborts with a panic message instead of
 /// exiting quietly. Dying on `SIGPIPE` is the correct behaviour for a CLI
 /// that streams a long listing to stdout.
 fn restore_default_sigpipe() {
@@ -151,20 +179,23 @@ fn run(cli: Cli) -> Result<()> {
         .catalog
         .clone()
         .unwrap_or_else(default_user_catalog_path);
-    let catalog = Catalog::load(Some(&user_catalog))?;
     let target_dir = cli
         .dir
         .clone()
         .unwrap_or_else(registry::user_applications_dir);
 
+    // Loaded on demand: `remove` and `completions` never read the catalog, so
+    // a malformed user catalog must not stop them from working.
+    let load_catalog = || Catalog::load(Some(&user_catalog));
+
     match cli.command.unwrap_or(Cmd::Scan) {
-        Cmd::Scan => cmd_scan(&catalog, &target_dir, cli.ignore_nodisplay),
+        Cmd::Scan => cmd_scan(&load_catalog()?, &target_dir, cli.ignore_nodisplay),
         Cmd::Install {
             yes,
             dry_run,
             force,
         } => cmd_install(
-            &catalog,
+            &load_catalog()?,
             &target_dir,
             cli.ignore_nodisplay,
             yes,
@@ -172,7 +203,7 @@ fn run(cli: Cli) -> Result<()> {
             force,
         ),
         Cmd::Orphans { no_filter, limit } => cmd_orphans(
-            &catalog,
+            &load_catalog()?,
             &target_dir,
             cli.ignore_nodisplay,
             no_filter,
@@ -182,14 +213,50 @@ fn run(cli: Cli) -> Result<()> {
             bins,
             force,
             dry_run,
-        } => cmd_create(&catalog, &target_dir, &bins, force, dry_run),
+        } => cmd_create(&load_catalog()?, &target_dir, &bins, force, dry_run),
         Cmd::Remove { yes, dry_run } => cmd_remove(&target_dir, yes, dry_run),
-        Cmd::Catalog { missing } => cmd_catalog(&catalog, &user_catalog, missing),
+        Cmd::Catalog { missing } => cmd_catalog(&load_catalog()?, &user_catalog, missing),
+        Cmd::Completions { shell } => cmd_completions(shell),
+        Cmd::Wine { prefixes, action } => match action {
+            WineCmd::Prefixes => cmd_wine_prefixes(&prefixes),
+        },
     }
 }
 
+fn cmd_wine_prefixes(extra: &[PathBuf]) -> Result<()> {
+    for path in extra {
+        if !path.exists() {
+            eprintln!("warning: --prefix {} does not exist", path.display());
+        }
+    }
+
+    let home = prefixes::home();
+    let env_prefix = env::var_os("WINEPREFIX")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute());
+    let drives = prefixes::drive_roots(&home);
+    let found = prefixes::discover(&home, env_prefix.as_deref(), extra, &drives);
+
+    let n = found.len();
+    println!("{n} Wine prefix{} found\n", if n == 1 { "" } else { "es" });
+    for prefix in &found {
+        println!("  {:<10}  {}", prefix.owner.as_str(), prefix.path.display());
+    }
+    if n == 0 {
+        println!("Nothing found. Name a location with `--prefix DIR` if yours is elsewhere.");
+    }
+    Ok(())
+}
+
+fn cmd_completions(shell: Shell) -> Result<()> {
+    let mut cmd = Cli::command();
+    let name = cmd.get_name().to_string();
+    clap_complete::generate(shell, &mut cmd, name, &mut io::stdout());
+    Ok(())
+}
+
 fn default_user_catalog_path() -> PathBuf {
-    registry::config_home().join("kappfinder-rs/catalog.toml")
+    registry::config_home().join("nexus-menu/catalog.toml")
 }
 
 /// Collect catalogued applications that are installed but unreachable from
@@ -222,7 +289,7 @@ fn cmd_scan(catalog: &Catalog, target_dir: &Path, ignore_nodisplay: bool) -> Res
     let registry = Registry::build(Some(target_dir), ignore_nodisplay);
     let (candidates, installed, covered) = find_candidates(catalog, &registry);
 
-    println!("kappfinder-rs — application menu entry finder\n");
+    println!("nexus-menu — application menu entry finder\n");
     println!("  catalog templates     {}", catalog.len());
     println!("  installed on $PATH    {installed}");
     println!("  already in the menu   {covered}");
@@ -248,7 +315,7 @@ fn cmd_scan(catalog: &Catalog, target_dir: &Path, ignore_nodisplay: bool) -> Res
 
     println!("\nInstalled but missing a menu entry:\n");
     print_candidates(&candidates);
-    println!("\nRun `kappfinder-rs install` to create these entries.");
+    println!("\nRun `nexus-menu install` to create these entries.");
     Ok(())
 }
 
@@ -392,7 +459,7 @@ fn cmd_orphans(
         println!("\n… {} more (raise or drop --limit).", total - shown);
     }
     println!(
-        "\nThis list is heuristic. Create entries explicitly with:\n  kappfinder-rs create <BIN>…"
+        "\nThis list is heuristic. Create entries explicitly with:\n  nexus-menu create <BIN>…"
     );
     if !no_filter {
         println!("Pass --no-filter to see everything, including libraries and coreutils.");
@@ -452,11 +519,11 @@ fn cmd_remove(target_dir: &Path, yes: bool, dry_run: bool) -> Result<()> {
         .collect();
 
     if owned.is_empty() {
-        println!("No entries generated by kappfinder-rs were found.");
+        println!("No entries generated by nexus-menu were found.");
         return Ok(());
     }
 
-    println!("Entries generated by kappfinder-rs:\n");
+    println!("Entries generated by nexus-menu:\n");
     for path in &owned {
         println!("  {}", path.display());
     }
@@ -624,13 +691,13 @@ mod tests {
 
     #[test]
     fn cli_parses_without_subcommand() {
-        let cli = Cli::try_parse_from(["kappfinder-rs"]).unwrap();
+        let cli = Cli::try_parse_from(["nexus-menu"]).unwrap();
         assert!(cli.command.is_none());
     }
 
     #[test]
     fn cli_parses_install_flags() {
-        let cli = Cli::try_parse_from(["kappfinder-rs", "install", "--yes", "-n"]).unwrap();
+        let cli = Cli::try_parse_from(["nexus-menu", "install", "--yes", "-n"]).unwrap();
         match cli.command {
             Some(Cmd::Install { yes, dry_run, .. }) => {
                 assert!(yes);
@@ -642,12 +709,73 @@ mod tests {
 
     #[test]
     fn create_requires_at_least_one_binary() {
-        assert!(Cli::try_parse_from(["kappfinder-rs", "create"]).is_err());
+        assert!(Cli::try_parse_from(["nexus-menu", "create"]).is_err());
+    }
+
+    #[test]
+    fn completions_require_a_known_shell() {
+        assert!(Cli::try_parse_from(["nexus-menu", "completions"]).is_err());
+        assert!(Cli::try_parse_from(["nexus-menu", "completions", "nonsense"]).is_err());
+        for shell in ["fish", "bash", "zsh"] {
+            assert!(Cli::try_parse_from(["nexus-menu", "completions", shell]).is_ok());
+        }
+    }
+
+    #[test]
+    fn generated_completions_mention_every_subcommand() {
+        let mut cmd = Cli::command();
+        let mut out = Vec::new();
+        clap_complete::generate(Shell::Fish, &mut cmd, "nexus-menu", &mut out);
+        let script = String::from_utf8(out).unwrap();
+        for sub in [
+            "scan",
+            "install",
+            "orphans",
+            "create",
+            "remove",
+            "catalog",
+            "completions",
+        ] {
+            assert!(script.contains(sub), "fish completions lack `{sub}`");
+        }
+    }
+
+    #[test]
+    fn wine_prefixes_parses_with_repeatable_prefix_flags() {
+        let cli = Cli::try_parse_from([
+            "nexus-menu",
+            "wine",
+            "prefixes",
+            "--prefix",
+            "/a",
+            "--prefix",
+            "/b",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Cmd::Wine { prefixes, action }) => {
+                assert_eq!(prefixes, vec![PathBuf::from("/a"), PathBuf::from("/b")]);
+                assert!(matches!(action, WineCmd::Prefixes));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn prefix_flag_works_before_the_wine_action() {
+        let cli =
+            Cli::try_parse_from(["nexus-menu", "wine", "--prefix", "/a", "prefixes"]).unwrap();
+        assert!(matches!(cli.command, Some(Cmd::Wine { .. })));
+    }
+
+    #[test]
+    fn wine_requires_an_action() {
+        assert!(Cli::try_parse_from(["nexus-menu", "wine"]).is_err());
     }
 
     #[test]
     fn global_flags_work_after_subcommand() {
-        let cli = Cli::try_parse_from(["kappfinder-rs", "install", "--dir", "/tmp/apps"]).unwrap();
+        let cli = Cli::try_parse_from(["nexus-menu", "install", "--dir", "/tmp/apps"]).unwrap();
         assert_eq!(cli.dir, Some(PathBuf::from("/tmp/apps")));
     }
 }

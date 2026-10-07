@@ -1,7 +1,7 @@
-# Launcher for kappfinder-rs itself.
+# Launcher for nexus-menu itself.
 #
-# This file is hand-written and carries no X-KAppFinder-Generated marker, so
-# `kappfinder-rs remove` will never delete it.
+# This file is hand-written and carries no X-NexusMenu-Generated marker, so
+# `nexus-menu remove` will never delete it.
 #
 # Exec calls the binary by name, which requires it to be on the $PATH of the
 # desktop session. `make install` rewrites Exec and TryExec to the absolute
@@ -16,9 +16,9 @@ Version=1.0
 Name=Menu Entry Finder
 GenericName=Desktop Entry Generator
 Comment=Find installed applications with no menu entry and create one
-Exec=sh -c "kappfinder-rs install; echo; echo 'Press Enter to close this window.'; read done"
-TryExec=kappfinder-rs
-Icon=kappfinder-rs
+Exec=sh -c "nexus-menu install; echo; echo 'Press Enter to close this window.'; read done"
+TryExec=nexus-menu
+Icon=nexus-menu
 Terminal=true
 Categories=Settings;DesktopSettings;
 Keywords=application;menu;launcher;desktop entry;freedesktop;xdg;kappfinder;missing;
@@ -27,12 +27,12 @@ Actions=scan;orphans;remove;
 
 [Desktop Action scan]
 Name=Scan without changing anything
-Exec=sh -c "kappfinder-rs scan; echo; echo 'Press Enter to close this window.'; read done"
+Exec=sh -c "nexus-menu scan; echo; echo 'Press Enter to close this window.'; read done"
 
 [Desktop Action orphans]
 Name=List every binary with no menu entry
-Exec=sh -c "kappfinder-rs orphans; echo; echo 'Press Enter to close this window.'; read done"
+Exec=sh -c "nexus-menu orphans; echo; echo 'Press Enter to close this window.'; read done"
 
 [Desktop Action remove]
 Name=Remove the entries this tool created
-Exec=sh -c "kappfinder-rs remove; echo; echo 'Press Enter to close this window.'; read done"
+Exec=sh -c "nexus-menu remove; echo; echo 'Press Enter to close this window.'; read done"

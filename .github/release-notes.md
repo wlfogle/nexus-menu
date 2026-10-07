@@ -15,25 +15,25 @@ The attached archive contains a **statically linked** binary. It has no glibc
 version requirement and runs on any x86_64 Linux.
 
 ```sh
-tar xzf kappfinder-rs-*-x86_64-unknown-linux-musl.tar.gz
-cd kappfinder-rs-*-x86_64-unknown-linux-musl
-install -Dm755 kappfinder-rs ~/.local/bin/kappfinder-rs
+tar xzf nexus-menu-*-x86_64-unknown-linux-musl.tar.gz
+cd nexus-menu-*-x86_64-unknown-linux-musl
+install -Dm755 nexus-menu ~/.local/bin/nexus-menu
 ```
 
 Verify the download first if you like:
 
 ```sh
-sha256sum -c kappfinder-rs-*.tar.gz.sha256
+sha256sum -c nexus-menu-*.tar.gz.sha256
 ```
 
-Or build from source with `cargo build --release` (Rust 1.74+).
+Or build from source with `cargo build --release` (Rust 1.85+).
 
 ## Quick start
 
 ```sh
-kappfinder-rs                  # read-only: what is installed but unmenued
-kappfinder-rs install          # create the missing entries, interactively
-kappfinder-rs remove           # undo everything this tool created
+nexus-menu                  # read-only: what is installed but unmenued
+nexus-menu install          # create the missing entries, interactively
+nexus-menu remove           # undo everything this tool created
 ```
 
 `scan`, `orphans`, and any `--dry-run` write nothing. Existing files are never

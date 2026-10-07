@@ -1,11 +1,11 @@
 [package]
-name = "kappfinder-rs"
+name = "nexus-menu"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.74"
+rust-version = "1.85"
 description = "Finds installed applications with no menu entry and generates freedesktop .desktop files for them (a maintained KAppFinder equivalent)"
 license = "GPL-3.0-or-later"
-repository = "https://github.com/wlfogle/kappfinder-rs"
+repository = "https://github.com/wlfogle/nexus-menu"
 readme = "README.md"
 keywords = ["desktop-entry", "freedesktop", "xdg", "launcher", "kappfinder"]
 categories = ["command-line-utilities", "os::linux-apis"]
@@ -13,8 +13,10 @@ categories = ["command-line-utilities", "os::linux-apis"]
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
+clap_complete = "4.5"
 libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
 toml = "0.8"
 walkdir = "2.5"
 
