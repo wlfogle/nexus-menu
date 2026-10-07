@@ -352,6 +352,49 @@ Subcommands and flags complete; the positional shell name after
 `completions` does not, because the generator does not emit hints for
 positional arguments in fish.
 
+### Wine prefixes
+
+```fish
+kappfinder-rs wine prefixes
+kappfinder-rs wine prefixes --prefix /media/games/PortProton/data/prefixes
+```
+
+Lists the Wine prefixes the tool can see, and which tool manages each. This
+is the discovery step for Windows applications; it is read-only and
+launches nothing. Prefixes come from four places and nowhere else:
+
+- **Top-level hidden folders of your home directory** that are prefixes —
+  `~/.wine`, `~/.insomniac`, and so on. Only the top level is looked at:
+  a recursive search finds Proton `default_pfx` templates and runtime files
+  that nobody installed applications into.
+- **`$WINEPREFIX` and `--prefix DIR`** (repeatable). `DIR` may be a prefix
+  or a directory of prefixes, so it is also how to reach prefixes outside
+  your home, such as ones on another disk.
+- **What each launcher declares**: Faugus's `~/Faugus/*`, PortProton's
+  `~/PortProton/data/prefixes/*`, the `prefix:` of each Lutris game config,
+  and the `winePrefix` of each Heroic game config.
+- **Every local disk**: a search for `drive_c` on each mounted drive that is a
+  real block device (`/media`, `/mnt`, `/run/media`, …), up to eight levels
+  deep. It stops at each prefix it finds and skips caches, build output
+  (`target`, `node_modules`), Steam libraries and `compatdata`, trash,
+  Windows system folders, and any directory with `backup` in its name.
+  Network mounts such as NFS are never searched.
+
+A directory counts as a prefix only if it has a `drive_c` folder and a
+`system.reg` or `user.reg` registry hive. When two sources name the same
+directory it is listed once, as plain Wine: a Lutris game that points at
+`~/.wine` does not turn it into a Lutris prefix.
+
+The owner column matters because entries must launch an app through the tool
+that manages its prefix; running a different Wine against a launcher's prefix
+can upgrade or corrupt it.
+
+Not looked for inside your home directory: Bottles, WineZGUI, PlayOnLinux and
+Steam Proton `compatdata`. Name them with `--prefix` if you want them listed.
+The disk search will also report copies of old home directories (for example
+a `.wine` inside a backup of a project tree) if they are not named like a
+backup, so check the list before trusting it.
+
 ## Global options
 
 These work before or after the subcommand.

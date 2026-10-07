@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the freshly built binary, via the new `install-completions` target, with
   `FISHCOMPDIR`, `BASHCOMPDIR`, and `ZSHCOMPDIR` overrides. `make uninstall`
   removes them.
+- **`wine prefixes`** lists Wine prefixes and the tool that manages each:
+  top-level hidden folders of the home directory, `$WINEPREFIX`, `--prefix`
+  locations, the prefixes Faugus, PortProton, Lutris and Heroic declare, and
+  a bounded `drive_c` search of every local disk (network mounts are never
+  searched; caches, Steam libraries, trash, Windows system folders and
+  backups are skipped). Read-only. This is the first step toward finding
+  Windows applications that have no menu entry; it does not create entries
+  yet.
 
 ### Changed
 - `remove` and `completions` no longer load the catalog, so a malformed user

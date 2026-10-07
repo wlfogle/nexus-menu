@@ -8,10 +8,12 @@
 
 mod catalog;
 mod desktop;
+mod prefixes;
 mod registry;
 mod scanner;
 mod select;
 
+use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -117,6 +119,23 @@ enum Cmd {
         #[arg(value_enum)]
         shell: Shell,
     },
+
+    /// Work with Windows applications in Wine prefixes and game launchers
+    Wine {
+        /// Extra prefix, or a directory to search for prefixes (repeatable)
+        #[arg(long = "prefix", value_name = "DIR", global = true)]
+        prefixes: Vec<PathBuf>,
+
+        #[command(subcommand)]
+        action: WineCmd,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum WineCmd {
+    /// List Wine prefixes: top-level hidden folders in your home directory,
+    /// plus those Faugus, PortProton, Lutris and Heroic declare
+    Prefixes,
 }
 
 /// A catalogued application that is installed but has no menu entry.
@@ -198,7 +217,35 @@ fn run(cli: Cli) -> Result<()> {
         Cmd::Remove { yes, dry_run } => cmd_remove(&target_dir, yes, dry_run),
         Cmd::Catalog { missing } => cmd_catalog(&load_catalog()?, &user_catalog, missing),
         Cmd::Completions { shell } => cmd_completions(shell),
+        Cmd::Wine { prefixes, action } => match action {
+            WineCmd::Prefixes => cmd_wine_prefixes(&prefixes),
+        },
     }
+}
+
+fn cmd_wine_prefixes(extra: &[PathBuf]) -> Result<()> {
+    for path in extra {
+        if !path.exists() {
+            eprintln!("warning: --prefix {} does not exist", path.display());
+        }
+    }
+
+    let home = prefixes::home();
+    let env_prefix = env::var_os("WINEPREFIX")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute());
+    let drives = prefixes::drive_roots(&home);
+    let found = prefixes::discover(&home, env_prefix.as_deref(), extra, &drives);
+
+    let n = found.len();
+    println!("{n} Wine prefix{} found\n", if n == 1 { "" } else { "es" });
+    for prefix in &found {
+        println!("  {:<10}  {}", prefix.owner.as_str(), prefix.path.display());
+    }
+    if n == 0 {
+        println!("Nothing found. Name a location with `--prefix DIR` if yours is elsewhere.");
+    }
+    Ok(())
 }
 
 fn cmd_completions(shell: Shell) -> Result<()> {
@@ -691,6 +738,39 @@ mod tests {
         ] {
             assert!(script.contains(sub), "fish completions lack `{sub}`");
         }
+    }
+
+    #[test]
+    fn wine_prefixes_parses_with_repeatable_prefix_flags() {
+        let cli = Cli::try_parse_from([
+            "kappfinder-rs",
+            "wine",
+            "prefixes",
+            "--prefix",
+            "/a",
+            "--prefix",
+            "/b",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Cmd::Wine { prefixes, action }) => {
+                assert_eq!(prefixes, vec![PathBuf::from("/a"), PathBuf::from("/b")]);
+                assert!(matches!(action, WineCmd::Prefixes));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn prefix_flag_works_before_the_wine_action() {
+        let cli =
+            Cli::try_parse_from(["kappfinder-rs", "wine", "--prefix", "/a", "prefixes"]).unwrap();
+        assert!(matches!(cli.command, Some(Cmd::Wine { .. })));
+    }
+
+    #[test]
+    fn wine_requires_an_action() {
+        assert!(Cli::try_parse_from(["kappfinder-rs", "wine"]).is_err());
     }
 
     #[test]
