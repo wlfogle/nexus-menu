@@ -108,6 +108,13 @@ make validate   # desktop-file-validate the shipped launcher
 
 Both must be clean; CI enforces them.
 
+CI also builds and tests on the exact Rust version declared as `rust-version`
+in `Cargo.toml` (the `msrv` job), using the locked dependencies. If a
+dependency bump makes that job fail, either choose a version that still builds
+on the declared minimum, or raise `rust-version` and update every place that
+repeats it in the same change: the README badge and Requirements section,
+CONTRIBUTING, and `.github/release-notes.md`.
+
 ## Changing the launcher
 
 [`desktop/nexus-menu.desktop`](desktop/nexus-menu.desktop) is

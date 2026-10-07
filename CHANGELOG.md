@@ -68,6 +68,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by running the full test suite on Rust 1.85.0 with `--locked`.
 
 ### Verification
+- CI has a new `msrv` job that reads `rust-version` from `Cargo.toml`, installs
+  exactly that toolchain, and runs the test suite on it with `--locked`. The
+  declared minimum can no longer drift from what the locked dependencies
+  really need, which is how it came to say 1.74 when 1.85 was required.
 - CI now validates the launcher with `desktop-file-validate` both as
   committed and as installed, failing on any output including hints, and
   asserts the install-time path rewrite actually matched rather than silently

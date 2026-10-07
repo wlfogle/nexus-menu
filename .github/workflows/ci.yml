@@ -37,6 +37,37 @@ jobs:
       - name: Tests
         run: cargo test
 
+  # The minimum Rust version in Cargo.toml is a promise to users. Without this
+  # job it silently rots: it was once stated as 1.74 while the locked
+  # dependencies needed 1.85, and nothing noticed. Cargo.toml is the single
+  # source of truth, so raising or lowering `rust-version` there changes what
+  # this job enforces, and a dependency bump that outgrows it fails here.
+  msrv:
+    name: builds on the declared minimum Rust version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read rust-version from Cargo.toml
+        id: msrv
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ -z "$version" ]; then
+            echo "::error::Cargo.toml declares no rust-version"
+            exit 1
+          fi
+          echo "minimum supported Rust version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install that toolchain
+        run: rustup toolchain install "${{ steps.msrv.outputs.version }}" --profile minimal
+
+      # --locked builds the exact dependency versions users get from Cargo.lock,
+      # which is what decides the real minimum.
+      - name: Build and test on it
+        run: cargo "+${{ steps.msrv.outputs.version }}" test --locked
+
   validate:
     name: generated entries pass desktop-file-validate
     runs-on: ubuntu-latest
