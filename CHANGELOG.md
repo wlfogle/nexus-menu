@@ -7,7 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Documentation
+- Expanded the README's installation guidance: a `cargo install --git`
+  option, how to actually put `~/.local/bin` on `$PATH` for fish and for
+  bash/zsh, and how to uninstall — including the ordering that matters, since
+  `remove` is what knows which entries belong to this tool.
+- Added a "First run" walkthrough covering the scan → `--dry-run` → apply
+  sequence, and documented the selection prompt grammar
+  (`all` / `none` / `1,3,5-7`), which was previously only discoverable by
+  triggering the prompt.
+- Documented the environment variables that govern behaviour (`PATH`,
+  `XDG_DATA_HOME`, `XDG_DATA_DIRS`, `XDG_CONFIG_HOME`) and their defaults.
+- Documented exit codes: `0` success, `1` runtime error, `2` bad command
+  line.
+- Added a troubleshooting section covering the likely failure modes: an
+  entry that does not appear in the menu, terminal applications closing
+  immediately when no default terminal is configured, generic or missing
+  icons, and a program reported as already present because its existing
+  entry is `NoDisplay`.
+- Added a table of contents.
+
+No code changes; `v0.1.0` remains current.
 
 ## [0.1.0] - 2026-10-07
 
