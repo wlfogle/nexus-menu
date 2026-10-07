@@ -123,8 +123,9 @@ cargo build --release
 install -Dm755 target/release/kappfinder-rs ~/.local/bin/kappfinder-rs
 ```
 
-Or let the `Makefile` place the binary, the launcher, and the icon in one
-step — see [Desktop launcher](#desktop-launcher):
+Or let the `Makefile` place the binary, the launcher, the icon, and the shell
+completions in one step — see [Desktop launcher](#desktop-launcher) and
+[Shell completions](#shell-completions):
 
 ```fish
 sudo make install                    # system-wide, under /usr/local
@@ -163,7 +164,7 @@ rm -rf ~/.config/kappfinder-rs       # only if you made a user catalog
 ```
 
 If you installed with `make`, the matching target removes the binary, the
-launcher, and the icon together:
+launcher, the icon, and the completions together:
 
 ```fish
 kappfinder-rs remove                 # first, while the binary still exists
@@ -183,13 +184,16 @@ sudo make install                    # system-wide, under /usr/local
 make install PREFIX=$HOME/.local     # or just for you
 ```
 
-That places three files:
+That places these files:
 
 | Path | What |
 | --- | --- |
 | `$PREFIX/bin/kappfinder-rs` | the binary |
 | `$PREFIX/share/applications/kappfinder-rs.desktop` | the launcher |
 | `$PREFIX/share/icons/hicolor/scalable/apps/kappfinder-rs.svg` | the icon |
+| `$PREFIX/share/fish/vendor_completions.d/kappfinder-rs.fish` | fish completions |
+| `$PREFIX/share/bash-completion/completions/kappfinder-rs` | bash completions |
+| `$PREFIX/share/zsh/site-functions/_kappfinder-rs` | zsh completions |
 
 Look for **Menu Entry Finder** in your application menu. It opens a terminal
 window, runs `install`, and waits for Enter at the end so the summary is
@@ -319,6 +323,35 @@ kappfinder-rs catalog
 kappfinder-rs catalog --missing      # templates whose binary isn't installed
 ```
 
+### Shell completions
+
+`completions <shell>` prints a completion script to stdout for `bash`, `zsh`,
+`fish`, `elvish`, or `powershell`. It never reads the catalog, so it works
+even if your user catalog is broken.
+
+For fish, a user-level install is one line:
+
+```fish
+kappfinder-rs completions fish > ~/.config/fish/completions/kappfinder-rs.fish
+```
+
+`make install` does this for you under its `PREFIX`, but a per-user
+`PREFIX=$HOME/.local` puts the fish script in
+`~/.local/share/fish/vendor_completions.d`, which is not on fish's completion
+search path, so it silently does nothing. Point the Makefile at a directory
+fish really reads:
+
+```fish
+make install-completions FISHCOMPDIR=$HOME/.config/fish/completions
+```
+
+The `BASHCOMPDIR` and `ZSHCOMPDIR` variables work the same way. Check what
+your fish searches with `printf '%s\n' $fish_complete_path`.
+
+Subcommands and flags complete; the positional shell name after
+`completions` does not, because the generator does not emit hints for
+positional arguments in fish.
+
 ## Global options
 
 These work before or after the subcommand.
@@ -421,7 +454,7 @@ Matching is by, in order:
 ## Correctness
 
 ```fish
-make check      # fmt + clippy -D warnings + 41 unit tests
+make check      # fmt + clippy -D warnings + the unit tests
 make validate   # desktop-file-validate the shipped launcher
 ```
 

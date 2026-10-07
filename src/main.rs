@@ -13,11 +13,13 @@ mod scanner;
 mod select;
 
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::Shell;
 
 use catalog::{AppTemplate, Catalog, Source};
 use registry::Registry;
@@ -108,6 +110,13 @@ enum Cmd {
         #[arg(long)]
         missing: bool,
     },
+
+    /// Print a shell completion script to stdout
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
+    },
 }
 
 /// A catalogued application that is installed but has no menu entry.
@@ -151,20 +160,23 @@ fn run(cli: Cli) -> Result<()> {
         .catalog
         .clone()
         .unwrap_or_else(default_user_catalog_path);
-    let catalog = Catalog::load(Some(&user_catalog))?;
     let target_dir = cli
         .dir
         .clone()
         .unwrap_or_else(registry::user_applications_dir);
 
+    // Loaded on demand: `remove` and `completions` never read the catalog, so
+    // a malformed user catalog must not stop them from working.
+    let load_catalog = || Catalog::load(Some(&user_catalog));
+
     match cli.command.unwrap_or(Cmd::Scan) {
-        Cmd::Scan => cmd_scan(&catalog, &target_dir, cli.ignore_nodisplay),
+        Cmd::Scan => cmd_scan(&load_catalog()?, &target_dir, cli.ignore_nodisplay),
         Cmd::Install {
             yes,
             dry_run,
             force,
         } => cmd_install(
-            &catalog,
+            &load_catalog()?,
             &target_dir,
             cli.ignore_nodisplay,
             yes,
@@ -172,7 +184,7 @@ fn run(cli: Cli) -> Result<()> {
             force,
         ),
         Cmd::Orphans { no_filter, limit } => cmd_orphans(
-            &catalog,
+            &load_catalog()?,
             &target_dir,
             cli.ignore_nodisplay,
             no_filter,
@@ -182,10 +194,18 @@ fn run(cli: Cli) -> Result<()> {
             bins,
             force,
             dry_run,
-        } => cmd_create(&catalog, &target_dir, &bins, force, dry_run),
+        } => cmd_create(&load_catalog()?, &target_dir, &bins, force, dry_run),
         Cmd::Remove { yes, dry_run } => cmd_remove(&target_dir, yes, dry_run),
-        Cmd::Catalog { missing } => cmd_catalog(&catalog, &user_catalog, missing),
+        Cmd::Catalog { missing } => cmd_catalog(&load_catalog()?, &user_catalog, missing),
+        Cmd::Completions { shell } => cmd_completions(shell),
     }
+}
+
+fn cmd_completions(shell: Shell) -> Result<()> {
+    let mut cmd = Cli::command();
+    let name = cmd.get_name().to_string();
+    clap_complete::generate(shell, &mut cmd, name, &mut io::stdout());
+    Ok(())
 }
 
 fn default_user_catalog_path() -> PathBuf {
@@ -643,6 +663,34 @@ mod tests {
     #[test]
     fn create_requires_at_least_one_binary() {
         assert!(Cli::try_parse_from(["kappfinder-rs", "create"]).is_err());
+    }
+
+    #[test]
+    fn completions_require_a_known_shell() {
+        assert!(Cli::try_parse_from(["kappfinder-rs", "completions"]).is_err());
+        assert!(Cli::try_parse_from(["kappfinder-rs", "completions", "nonsense"]).is_err());
+        for shell in ["fish", "bash", "zsh"] {
+            assert!(Cli::try_parse_from(["kappfinder-rs", "completions", shell]).is_ok());
+        }
+    }
+
+    #[test]
+    fn generated_completions_mention_every_subcommand() {
+        let mut cmd = Cli::command();
+        let mut out = Vec::new();
+        clap_complete::generate(Shell::Fish, &mut cmd, "kappfinder-rs", &mut out);
+        let script = String::from_utf8(out).unwrap();
+        for sub in [
+            "scan",
+            "install",
+            "orphans",
+            "create",
+            "remove",
+            "catalog",
+            "completions",
+        ] {
+            assert!(script.contains(sub), "fish completions lack `{sub}`");
+        }
     }
 
     #[test]
