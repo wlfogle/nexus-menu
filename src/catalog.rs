@@ -4,7 +4,7 @@
 //! heuristic: it knows about a fixed set of programs and what a good menu
 //! entry for each one looks like. A blind sweep of `$PATH` produces hundreds
 //! of useless entries for things like `ls` and `awk`, so that mode exists
-//! only as an explicit, opt-in report (`kappfinder-rs orphans`).
+//! only as an explicit, opt-in report (`nexus-menu orphans`).
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -79,7 +79,7 @@ pub struct AppTemplate {
 
 impl AppTemplate {
     /// Build a reasonable default template for a binary the catalog does not
-    /// know about. Used by `kappfinder-rs create <bin>`.
+    /// know about. Used by `nexus-menu create <bin>`.
     pub fn auto(bin: &str) -> Self {
         AppTemplate {
             bin: bin.to_string(),

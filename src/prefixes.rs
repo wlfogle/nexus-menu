@@ -405,7 +405,7 @@ mod tests {
         fn new() -> Self {
             static N: AtomicUsize = AtomicUsize::new(0);
             let dir = env::temp_dir().join(format!(
-                "kappfinder-test-{}-{}",
+                "nexus-menu-test-{}-{}",
                 std::process::id(),
                 N.fetch_add(1, Ordering::SeqCst)
             ));

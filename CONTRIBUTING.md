@@ -6,8 +6,8 @@ contribution, and the easiest to get right.
 ## Before you start
 
 ```fish
-git clone https://github.com/wlfogle/kappfinder-rs.git
-cd kappfinder-rs
+git clone https://github.com/wlfogle/nexus-menu.git
+cd nexus-menu
 make check
 ```
 
@@ -90,7 +90,7 @@ cargo test
 # Confirm the entry loads and renders a valid file
 cargo build --release
 set T (mktemp -d)
-./target/release/kappfinder-rs --dir $T create --force myapp
+./target/release/nexus-menu --dir $T create --force myapp
 cat $T/myapp.desktop
 desktop-file-validate $T/*.desktop     # must print nothing at all
 ```
@@ -110,15 +110,15 @@ Both must be clean; CI enforces them.
 
 ## Changing the launcher
 
-[`desktop/kappfinder-rs.desktop`](desktop/kappfinder-rs.desktop) is
+[`desktop/nexus-menu.desktop`](desktop/nexus-menu.desktop) is
 hand-written, and two things about it are load-bearing:
 
 - **`make install-launcher` rewrites `Exec=` and `TryExec=`** to the absolute
   binary path with `sed`. CI asserts the rewrite matched, so keep every
-  `Exec=` in the form `sh -c "kappfinder-rs …"` and `TryExec=kappfinder-rs`
+  `Exec=` in the form `sh -c "nexus-menu …"` and `TryExec=nexus-menu`
   on its own line. If you add or remove a desktop action, update the expected
   count in the CI step.
-- **It must never carry `X-KAppFinder-Generated`.** That marker is what
+- **It must never carry `X-NexusMenu-Generated`.** That marker is what
   `remove` deletes by, and the launcher is not the tool's own output.
 
 Validate after any change:
@@ -126,7 +126,7 @@ Validate after any change:
 ```fish
 make validate
 make install-launcher DESTDIR=/tmp/stage PREFIX=/usr
-desktop-file-validate /tmp/stage/usr/share/applications/kappfinder-rs.desktop
+desktop-file-validate /tmp/stage/usr/share/applications/nexus-menu.desktop
 ```
 
 House rules, mostly inherited from the problem domain:
@@ -140,7 +140,9 @@ House rules, mostly inherited from the problem domain:
   exceptions. If you find yourself adding a name to an allowlist, consider
   whether the rule itself is wrong.
 - **Never widen what `remove` deletes.** It only touches files carrying the
-  `X-KAppFinder-Generated` marker, inside directories the user owns.
+  `X-NexusMenu-Generated` marker (or the legacy `X-KAppFinder-Generated`
+  one that releases before the rename wrote), inside directories the user
+  owns.
 
 ## Reporting bugs
 
@@ -149,7 +151,7 @@ Useful reports include:
 - the command you ran and its full output,
 - your desktop environment and distribution,
 - for wrong or missing detection, the relevant `.desktop` file and the output
-  of `kappfinder-rs scan`.
+  of `nexus-menu scan`.
 
 ## Licence
 

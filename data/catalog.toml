@@ -1,4 +1,4 @@
-# kappfinder-rs built-in application catalog
+# nexus-menu built-in application catalog
 #
 # Each [[app]] is a recipe for one .desktop entry. The tool looks for `bin` on
 # $PATH; if it is installed but has no menu entry anywhere in the XDG
@@ -18,7 +18,7 @@
 #   startup_notify StartupNotify= — defaults to !terminal
 #
 # Extend or override this without rebuilding by creating
-# $XDG_CONFIG_HOME/kappfinder-rs/catalog.toml using the same syntax. A user
+# $XDG_CONFIG_HOME/nexus-menu/catalog.toml using the same syntax. A user
 # entry with the same `bin` replaces the built-in one outright.
 
 # ---------------------------------------------------------------------------

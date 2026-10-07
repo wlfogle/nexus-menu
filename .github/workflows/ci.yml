@@ -61,7 +61,7 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/entries /tmp/stubbin
 
-          ./target/release/kappfinder-rs catalog \
+          ./target/release/nexus-menu catalog \
             | sed -n 's/^  \([^ ]\+\) .*/\1/p' > /tmp/bins.txt
           expected=$(wc -l < /tmp/bins.txt)
           echo "catalog advertises $expected templates"
@@ -74,7 +74,7 @@ jobs:
             chmod +x "/tmp/stubbin/$bin"
           done < /tmp/bins.txt
 
-          PATH="/tmp/stubbin:$PATH" ./target/release/kappfinder-rs \
+          PATH="/tmp/stubbin:$PATH" ./target/release/nexus-menu \
             --dir /tmp/entries create --force $(tr '\n' ' ' < /tmp/bins.txt)
 
           actual=$(ls -1 /tmp/entries/*.desktop | wc -l)
@@ -101,8 +101,8 @@ jobs:
         run: |
           set -euo pipefail
           make install-launcher DESTDIR=/tmp/stage PREFIX=/usr
-          installed=/tmp/stage/usr/share/applications/kappfinder-rs.desktop
-          output=$(desktop-file-validate desktop/kappfinder-rs.desktop "$installed" 2>&1 || true)
+          installed=/tmp/stage/usr/share/applications/nexus-menu.desktop
+          output=$(desktop-file-validate desktop/nexus-menu.desktop "$installed" 2>&1 || true)
           if [ -n "$output" ]; then
             echo "desktop-file-validate reported problems:"
             echo "$output"
@@ -111,7 +111,7 @@ jobs:
 
           # The rewrite is a sed over a file that is free to change; prove it
           # still produced absolute paths rather than silently matching nothing.
-          grep -q '^TryExec=/usr/bin/kappfinder-rs$' "$installed"
-          test "$(grep -c 'sh -c "/usr/bin/kappfinder-rs ' "$installed")" -eq 4
-          test -f /tmp/stage/usr/share/icons/hicolor/scalable/apps/kappfinder-rs.svg
+          grep -q '^TryExec=/usr/bin/nexus-menu$' "$installed"
+          test "$(grep -c 'sh -c "/usr/bin/nexus-menu ' "$installed")" -eq 4
+          test -f /tmp/stage/usr/share/icons/hicolor/scalable/apps/nexus-menu.svg
           echo "launcher valid and correctly rewritten"

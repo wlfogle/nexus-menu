@@ -8,13 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Desktop launcher.** `desktop/kappfinder-rs.desktop` puts the tool in the
+- **Desktop launcher.** `desktop/nexus-menu.desktop` puts the tool in the
   application menu as **Menu Entry Finder**. It runs in a terminal and pauses
   before closing, so the summary survives the window. Desktop actions expose
   `scan`, `orphans`, and `remove` from the launcher's context menu. The file
-  carries no `X-KAppFinder-Generated` marker, so `remove` will never delete
+  carries no `X-NexusMenu-Generated` marker, so `remove` will never delete
   it.
-- **Scalable icon** at `desktop/kappfinder-rs.svg`, installed into
+- **Scalable icon** at `desktop/nexus-menu.svg`, installed into
   `hicolor/scalable/apps`.
 - **`Makefile`** with `build`, `check`, `validate`, `install`,
   `install-bin`, `install-launcher`, `uninstall`, and `clean`. `PREFIX`,
@@ -38,6 +38,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   yet.
 
 ### Changed
+- **Renamed from `kappfinder-rs` to `nexus-menu`**, ahead of joining NexusOS.
+  The crate, binary, repository, launcher, icon, completions and release
+  archives all use the new name; the GitHub repository redirects from the old
+  one. What you need to know when upgrading:
+  - A user catalog at `~/.config/kappfinder-rs/catalog.toml` must move to
+    `~/.config/nexus-menu/catalog.toml`.
+  - Generated entries now carry `X-NexusMenu-Generated` and
+    `X-NexusMenu-Source`. Entries made by earlier releases carry
+    `X-KAppFinder-Generated`; `remove` still recognises it, so nothing
+    already generated is orphaned.
+  - Prebuilt archives under the new name begin with the next release; the
+    existing `v0.1.0` archives keep their original names.
+  - Uninstall an old install with the old `make uninstall` before installing
+    the new one, since the file names differ.
 - `remove` and `completions` no longer load the catalog, so a malformed user
   catalog can no longer stop them from working. `scan`, `install`,
   `orphans`, `create`, and `catalog` still report the parse error.
@@ -147,5 +161,5 @@ entries only for the ones missing.
   the program `flatpak` rather than the application, so a Flatpak install
   does not suppress an entry for a native binary of the same name.
 
-[Unreleased]: https://github.com/wlfogle/kappfinder-rs/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/wlfogle/kappfinder-rs/releases/tag/v0.1.0
+[Unreleased]: https://github.com/wlfogle/nexus-menu/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/wlfogle/nexus-menu/releases/tag/v0.1.0
