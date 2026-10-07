@@ -8,11 +8,11 @@ contribution, and the easiest to get right.
 ```fish
 git clone https://github.com/wlfogle/kappfinder-rs.git
 cd kappfinder-rs
-cargo test
+make check
 ```
 
 Rust 1.74 or newer. `desktop-file-utils` is worth installing locally so you
-can validate entries the same way CI does.
+can validate entries the same way CI does — `make validate` uses it.
 
 ## Adding a catalog entry
 
@@ -102,11 +102,32 @@ it printed anything, not by its exit status. CI does the same.
 
 ```fish
 cargo fmt
-cargo clippy --all-targets -- -D warnings
-cargo test
+make check      # fmt --check, clippy -D warnings, tests
+make validate   # desktop-file-validate the shipped launcher
 ```
 
-All three must be clean; CI enforces them.
+Both must be clean; CI enforces them.
+
+## Changing the launcher
+
+[`desktop/kappfinder-rs.desktop`](desktop/kappfinder-rs.desktop) is
+hand-written, and two things about it are load-bearing:
+
+- **`make install-launcher` rewrites `Exec=` and `TryExec=`** to the absolute
+  binary path with `sed`. CI asserts the rewrite matched, so keep every
+  `Exec=` in the form `sh -c "kappfinder-rs …"` and `TryExec=kappfinder-rs`
+  on its own line. If you add or remove a desktop action, update the expected
+  count in the CI step.
+- **It must never carry `X-KAppFinder-Generated`.** That marker is what
+  `remove` deletes by, and the launcher is not the tool's own output.
+
+Validate after any change:
+
+```fish
+make validate
+make install-launcher DESTDIR=/tmp/stage PREFIX=/usr
+desktop-file-validate /tmp/stage/usr/share/applications/kappfinder-rs.desktop
+```
 
 House rules, mostly inherited from the problem domain:
 

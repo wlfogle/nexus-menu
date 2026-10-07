@@ -101,7 +101,10 @@ jobs:
           name="kappfinder-rs-$version-$TARGET"
           mkdir -p "dist/$name"
           cp "target/$TARGET/release/kappfinder-rs" "dist/$name/"
-          cp README.md LICENSE CHANGELOG.md "dist/$name/"
+          cp README.md LICENSE CHANGELOG.md Makefile "dist/$name/"
+          # Ship the launcher and its icon so `make install-launcher` works
+          # straight out of the archive, without a checkout or a toolchain.
+          cp -r desktop "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           ( cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256" )
           echo "archive=dist/$name.tar.gz" >> "$GITHUB_OUTPUT"

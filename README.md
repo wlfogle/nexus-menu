@@ -15,7 +15,8 @@ Nothing replaced the specific job it did, so this does.
 ---
 
 **Getting started:** [Requirements](#requirements) ·
-[Install](#install) · [First run](#first-run) · [Usage](#usage)
+[Install](#install) · [Desktop launcher](#desktop-launcher) ·
+[First run](#first-run) · [Usage](#usage)
 
 **Reference:** [Global options](#global-options) ·
 [Environment](#environment) · [Exit codes](#exit-codes) ·
@@ -122,6 +123,14 @@ cargo build --release
 install -Dm755 target/release/kappfinder-rs ~/.local/bin/kappfinder-rs
 ```
 
+Or let the `Makefile` place the binary, the launcher, and the icon in one
+step — see [Desktop launcher](#desktop-launcher):
+
+```fish
+sudo make install                    # system-wide, under /usr/local
+make install PREFIX=$HOME/.local     # or just for you
+```
+
 ### Put it on your PATH
 
 `~/.local/bin` is not on `$PATH` by default on every distribution.
@@ -152,6 +161,61 @@ kappfinder-rs remove
 rm ~/.local/bin/kappfinder-rs        # or: cargo uninstall kappfinder-rs
 rm -rf ~/.config/kappfinder-rs       # only if you made a user catalog
 ```
+
+If you installed with `make`, the matching target removes the binary, the
+launcher, and the icon together:
+
+```fish
+kappfinder-rs remove                 # first, while the binary still exists
+make uninstall PREFIX=$HOME/.local   # or: sudo make uninstall
+```
+
+`make uninstall` deliberately leaves generated menu entries alone — they are
+yours, and only the binary can tell which files it wrote.
+
+## Desktop launcher
+
+The tool is a terminal program, but it does not have to be launched from a
+terminal. `make install` adds a menu entry and icon for it:
+
+```fish
+sudo make install                    # system-wide, under /usr/local
+make install PREFIX=$HOME/.local     # or just for you
+```
+
+That places three files:
+
+| Path | What |
+| --- | --- |
+| `$PREFIX/bin/kappfinder-rs` | the binary |
+| `$PREFIX/share/applications/kappfinder-rs.desktop` | the launcher |
+| `$PREFIX/share/icons/hicolor/scalable/apps/kappfinder-rs.svg` | the icon |
+
+Look for **Menu Entry Finder** in your application menu. It opens a terminal
+window, runs `install`, and waits for Enter at the end so the summary is
+still on screen when the tool exits.
+
+Right-click the launcher for the other commands, exposed as desktop actions:
+
+- **Scan without changing anything** — the read-only report
+- **List every binary with no menu entry** — the `orphans` sweep
+- **Remove the entries this tool created** — the undo
+
+Already installed the binary another way? Add just the launcher, pointing it
+at wherever the binary actually lives:
+
+```fish
+make install-launcher PREFIX=$HOME/.local
+make install-launcher PREFIX=$HOME/.local BINDIR=$HOME/.cargo/bin
+```
+
+The installed copy's `Exec=` and `TryExec=` are rewritten to that absolute
+path. This matters: a desktop session's `$PATH` is not your shell's, and
+often omits `~/.local/bin` entirely, so a launcher that called the binary by
+bare name would fail for exactly the people who need it most.
+
+The launcher carries no `X-KAppFinder-Generated` marker, so
+`kappfinder-rs remove` will never delete it.
 
 ## First run
 
@@ -357,9 +421,8 @@ Matching is by, in order:
 ## Correctness
 
 ```fish
-cargo test                                  # 41 unit tests
-cargo clippy --all-targets -- -D warnings
-cargo fmt --check
+make check      # fmt + clippy -D warnings + 41 unit tests
+make validate   # desktop-file-validate the shipped launcher
 ```
 
 Tests cover `Exec` tokenising and wrapper unwrapping, Desktop Entry
@@ -374,6 +437,10 @@ just the ones installed on the runner — and runs `desktop-file-validate` over
 all of them. Since the validator exits 0 on hints and warnings, CI treats
 *any* output as a failure. No template can land that produces a
 non-conforming entry.
+
+The hand-written launcher is held to the same bar, validated both as
+committed and as `make install-launcher` rewrites it — the form users
+actually receive.
 
 To reproduce locally:
 
@@ -420,6 +487,26 @@ kbuildsycoca6                      # KDE Plasma 6 (kbuildsycoca5 on Plasma 5)
 
 If it still does not show up, log out and back in. A fresh session rebuilds
 the menu unconditionally.
+
+### The launcher does nothing, or a window flashes and vanishes
+
+Nothing at all usually means no default terminal emulator is configured —
+the launcher is `Terminal=true` and has nowhere to run. Set one in your
+desktop settings.
+
+A window that opens and closes instantly means the binary is not where the
+launcher thinks it is. Check what it was pointed at, and compare:
+
+```fish
+grep ^TryExec= ~/.local/share/applications/kappfinder-rs.desktop
+command -v kappfinder-rs
+```
+
+If they disagree, reinstall the launcher against the real location:
+
+```fish
+make install-launcher PREFIX=$HOME/.local BINDIR=(dirname (command -v kappfinder-rs))
+```
 
 ### A terminal application opens and closes instantly
 
@@ -493,7 +580,10 @@ Only files this tool generated are touched.
   the category rules the tests enforce
 - [data/catalog.toml](data/catalog.toml) — the catalog itself, documented
   inline
-  generic one.
+- [desktop/kappfinder-rs.desktop](desktop/kappfinder-rs.desktop) — the
+  launcher `make install` installs, with its desktop actions
+- [Makefile](Makefile) — build, install, uninstall, and the
+  `desktop-file-validate` check
 
 ## Contributing
 
@@ -504,9 +594,8 @@ distro already ships one, it doesn't belong here.
 Before opening a PR:
 
 ```fish
-cargo test
-cargo clippy --all-targets -- -D warnings
-cargo fmt --check
+make check
+make validate
 ```
 
 The catalog invariant tests will reject entries with the wrong category

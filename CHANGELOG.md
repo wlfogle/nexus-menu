@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Desktop launcher.** `desktop/kappfinder-rs.desktop` puts the tool in the
+  application menu as **Menu Entry Finder**. It runs in a terminal and pauses
+  before closing, so the summary survives the window. Desktop actions expose
+  `scan`, `orphans`, and `remove` from the launcher's context menu. The file
+  carries no `X-KAppFinder-Generated` marker, so `remove` will never delete
+  it.
+- **Scalable icon** at `desktop/kappfinder-rs.svg`, installed into
+  `hicolor/scalable/apps`.
+- **`Makefile`** with `build`, `check`, `validate`, `install`,
+  `install-bin`, `install-launcher`, `uninstall`, and `clean`. `PREFIX`,
+  `BINDIR`, and `DESTDIR` are honoured, and cache-refresh commands are
+  skipped under `DESTDIR` for packagers.
+- Release archives now ship `Makefile` and `desktop/`, so the launcher can be
+  installed straight from a prebuilt tarball with `make install-launcher`.
+
+### Changed
+- `make install-launcher` rewrites the installed entry's `Exec=` and
+  `TryExec=` to the absolute path of the binary. A desktop session's `$PATH`
+  frequently omits `~/.local/bin`, which would otherwise break the launcher
+  for user-local installs.
+
+### Verification
+- CI now validates the launcher with `desktop-file-validate` both as
+  committed and as installed, failing on any output including hints, and
+  asserts the install-time path rewrite actually matched rather than silently
+  doing nothing.
+
 ### Documentation
 - Expanded the README's installation guidance: a `cargo install --git`
   option, how to actually put `~/.local/bin` on `$PATH` for fish and for
@@ -26,8 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   icons, and a program reported as already present because its existing
   entry is `NoDisplay`.
 - Added a table of contents.
-
-No code changes; `v0.1.0` remains current.
+- Documented the desktop launcher: what `make install` places where, the
+  available desktop actions, how to install the launcher alone against an
+  existing binary, and how to diagnose a launcher that does nothing.
+- Fixed a stray duplicated line at the end of the project documentation list.
 
 ## [0.1.0] - 2026-10-07
 

@@ -1,0 +1,38 @@
+# Launcher for kappfinder-rs itself.
+#
+# This file is hand-written and carries no X-KAppFinder-Generated marker, so
+# `kappfinder-rs remove` will never delete it.
+#
+# Exec calls the binary by name, which requires it to be on the $PATH of the
+# desktop session. `make install` rewrites Exec and TryExec to the absolute
+# path the binary was installed to, which removes that requirement.
+#
+# Every command is wrapped in `sh -c` so the terminal window stays open after
+# the tool exits; otherwise the emulator closes instantly and the summary is
+# never read.
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Menu Entry Finder
+GenericName=Desktop Entry Generator
+Comment=Find installed applications with no menu entry and create one
+Exec=sh -c "kappfinder-rs install; echo; echo 'Press Enter to close this window.'; read done"
+TryExec=kappfinder-rs
+Icon=kappfinder-rs
+Terminal=true
+Categories=Settings;DesktopSettings;
+Keywords=application;menu;launcher;desktop entry;freedesktop;xdg;kappfinder;missing;
+StartupNotify=false
+Actions=scan;orphans;remove;
+
+[Desktop Action scan]
+Name=Scan without changing anything
+Exec=sh -c "kappfinder-rs scan; echo; echo 'Press Enter to close this window.'; read done"
+
+[Desktop Action orphans]
+Name=List every binary with no menu entry
+Exec=sh -c "kappfinder-rs orphans; echo; echo 'Press Enter to close this window.'; read done"
+
+[Desktop Action remove]
+Name=Remove the entries this tool created
+Exec=sh -c "kappfinder-rs remove; echo; echo 'Press Enter to close this window.'; read done"

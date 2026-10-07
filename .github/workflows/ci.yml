@@ -93,3 +93,25 @@ jobs:
             exit 1
           fi
           echo "all entries valid: no errors, warnings, or hints"
+
+      # The tool's own launcher is hand-written, so it needs the same scrutiny
+      # as the generated ones — both as committed and as `make install-launcher`
+      # rewrites it, which is the form users actually get.
+      - name: Validate the shipped launcher
+        run: |
+          set -euo pipefail
+          make install-launcher DESTDIR=/tmp/stage PREFIX=/usr
+          installed=/tmp/stage/usr/share/applications/kappfinder-rs.desktop
+          output=$(desktop-file-validate desktop/kappfinder-rs.desktop "$installed" 2>&1 || true)
+          if [ -n "$output" ]; then
+            echo "desktop-file-validate reported problems:"
+            echo "$output"
+            exit 1
+          fi
+
+          # The rewrite is a sed over a file that is free to change; prove it
+          # still produced absolute paths rather than silently matching nothing.
+          grep -q '^TryExec=/usr/bin/kappfinder-rs$' "$installed"
+          test "$(grep -c 'sh -c "/usr/bin/kappfinder-rs ' "$installed")" -eq 4
+          test -f /tmp/stage/usr/share/icons/hicolor/scalable/apps/kappfinder-rs.svg
+          echo "launcher valid and correctly rewritten"

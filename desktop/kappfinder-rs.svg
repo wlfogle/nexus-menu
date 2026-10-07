@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  kappfinder-rs application icon.
+
+  An application grid with one tile missing, under a magnifier: the whole job
+  of the tool in one picture. Drawn on the 48x48 grid the hicolor scalable
+  directory expects, with no gradients or filters so it stays legible when a
+  menu renders it at 16px.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <title>kappfinder-rs</title>
+  <!-- Applications that already have a menu entry. -->
+  <g fill="#3584e4">
+    <rect x="4" y="4" width="12" height="12" rx="3"/>
+    <rect x="20" y="4" width="12" height="12" rx="3"/>
+    <rect x="4" y="20" width="12" height="12" rx="3"/>
+  </g>
+  <!-- The one that does not: an empty slot waiting to be filled. -->
+  <rect x="20" y="20" width="12" height="12" rx="3"
+        fill="none" stroke="#3584e4" stroke-width="2"
+        stroke-dasharray="4 3" stroke-linecap="round" opacity="0.65"/>
+  <!-- Magnifier, examining the empty slot. -->
+  <g fill="none" stroke="#1a5fb4" stroke-linecap="round">
+    <circle cx="31" cy="31" r="11" stroke-width="3.5"/>
+    <path d="M 38.8 38.8 L 44 44" stroke-width="4.5"/>
+  </g>
+</svg>
