@@ -12,6 +12,7 @@ mod prefixes;
 mod registry;
 mod scanner;
 mod select;
+mod wine_apps;
 
 use std::env;
 use std::fs;
@@ -32,9 +33,9 @@ use registry::Registry;
     version,
     about = "Find installed applications with no menu entry and create one",
     long_about = "nexus-menu scans $PATH for programs it has templates for, checks \
-                  whether each already has a .desktop entry anywhere in the XDG \
-                  application directories, and generates entries for the ones that do not.\n\n\
-                  With no subcommand it performs a read-only scan and reports findings."
+                   whether each already has a .desktop entry anywhere in the XDG \
+                   application directories, and generates entries for the ones that do not.\n\n\
+                   With no subcommand it performs a read-only scan and reports findings."
 )]
 struct Cli {
     /// Directory to write generated entries into
@@ -136,6 +137,22 @@ enum WineCmd {
     /// List Wine prefixes: top-level hidden folders in your home directory,
     /// plus those Faugus, PortProton, Lutris and Heroic declare
     Prefixes,
+
+    /// Report Windows applications found in Wine prefixes
+    Scan,
+
+    /// Create menu entries for Windows applications in Wine prefixes
+    Install {
+        /// Accept every candidate without prompting
+        #[arg(short, long)]
+        yes: bool,
+        /// Show what would be written, then stop
+        #[arg(short = 'n', long)]
+        dry_run: bool,
+        /// Overwrite existing files in the target directory
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 /// A catalogued application that is installed but has no menu entry.
@@ -219,6 +236,12 @@ fn run(cli: Cli) -> Result<()> {
         Cmd::Completions { shell } => cmd_completions(shell),
         Cmd::Wine { prefixes, action } => match action {
             WineCmd::Prefixes => cmd_wine_prefixes(&prefixes),
+            WineCmd::Scan => cmd_wine_scan(&prefixes, &target_dir),
+            WineCmd::Install {
+                yes,
+                dry_run,
+                force,
+            } => cmd_wine_install(&prefixes, &target_dir, yes, dry_run, force),
         },
     }
 }
@@ -244,6 +267,137 @@ fn cmd_wine_prefixes(extra: &[PathBuf]) -> Result<()> {
     }
     if n == 0 {
         println!("Nothing found. Name a location with `--prefix DIR` if yours is elsewhere.");
+    }
+    Ok(())
+}
+
+fn cmd_wine_scan(extra: &[PathBuf], target_dir: &Path) -> Result<()> {
+    let home = prefixes::home();
+    let env_prefix = env::var_os("WINEPREFIX")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute());
+    let drives = prefixes::drive_roots(&home);
+    let all_prefixes = prefixes::discover(&home, env_prefix.as_deref(), extra, &drives);
+
+    let apps = wine_apps::discover(&all_prefixes);
+    let registry = Registry::build(Some(target_dir), false);
+
+    let mut candidates = Vec::new();
+    for app in apps {
+        if registry.covers(&app.name).is_none() {
+            candidates.push(app);
+        }
+    }
+
+    println!("nexus-menu — Windows application finder\n");
+    println!("  Wine prefixes found   {}", all_prefixes.len());
+    println!("  applications scanned  {}", candidates.len() + registry.generated.len());
+    println!("  created by this tool  {}", registry.generated.len());
+
+    if candidates.is_empty() {
+        println!("\nEvery discovered Windows application already has a menu entry.");
+        return Ok(());
+    }
+
+    println!("\nDiscovered applications without menu entries:\n");
+    print_wine_apps(&candidates);
+    println!("\nRun `nexus-menu wine install` to create entries.");
+    Ok(())
+}
+
+fn print_wine_apps(apps: &[wine_apps::WineApp]) {
+    let width = apps
+        .iter()
+        .map(|a| a.name.len())
+        .max()
+        .unwrap_or(0)
+        .max(4);
+
+    for (i, app) in apps.iter().enumerate() {
+        println!(
+            "  {:>3}  {:<width$}  {}",
+            i + 1,
+            app.name,
+            app.prefix.display(),
+            width = width
+        );
+    }
+}
+
+fn cmd_wine_install(
+    extra: &[PathBuf],
+    target_dir: &Path,
+    yes: bool,
+    dry_run: bool,
+    force: bool,
+) -> Result<()> {
+    let home = prefixes::home();
+    let env_prefix = env::var_os("WINEPREFIX")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute());
+    let drives = prefixes::drive_roots(&home);
+    let all_prefixes = prefixes::discover(&home, env_prefix.as_deref(), extra, &drives);
+
+    let apps = wine_apps::discover(&all_prefixes);
+    let registry = Registry::build(Some(target_dir), false);
+
+    let mut candidates = Vec::new();
+    for app in apps {
+        if registry.covers(&app.name).is_none() {
+            candidates.push(app);
+        }
+    }
+
+    if candidates.is_empty() {
+        println!("Nothing to do: every discovered Windows application already has a menu entry.");
+        return Ok(());
+    }
+
+    println!("Discovered Windows applications without menu entries:\n");
+    print_wine_apps(&candidates);
+    println!("\nEntries will be written to {}", target_dir.display());
+
+    let chosen: Vec<usize> = if yes || dry_run {
+        (0..candidates.len()).collect()
+    } else {
+        select::prompt_selection(candidates.len())?
+    };
+
+    if chosen.is_empty() {
+        println!("Nothing selected.");
+        return Ok(());
+    }
+
+    let mut created = 0usize;
+    let mut skipped = 0usize;
+    println!();
+    for idx in chosen {
+        let app = &candidates[idx];
+        match wine_apps::write_desktop(app, target_dir, force, dry_run) {
+            Ok(Some(path)) if dry_run => {
+                println!("  would create  {}", path.display());
+            }
+            Ok(Some(path)) => {
+                println!("  created  {}", path.display());
+                created += 1;
+            }
+            Ok(None) => {
+                let path = target_dir.join(format!("{}.desktop", wine_apps::sanitize_name(&app.name)));
+                println!("  exists, skipped  {} (use --force)", path.display());
+                skipped += 1;
+            }
+            Err(e) => eprintln!("warning: could not create entry for {}: {e}", app.name),
+        }
+    }
+
+    if dry_run {
+        println!("\nDry run: nothing was written.");
+        return Ok(());
+    }
+
+    println!("\n{created} created, {skipped} skipped.");
+    if created > 0 {
+        refresh_desktop_database(target_dir);
     }
     Ok(())
 }
@@ -478,7 +632,7 @@ fn cmd_create(
 
     for raw in bins {
         let bin_path = scanner::lookup(raw)
-            .with_context(|| format!("`{raw}` is not an executable on $PATH"))?;
+            .with_context(|| format!("`{raw}` is not an executable on $PATH"))?
         let key = desktop::basename(raw);
 
         let template = match catalog.get(&key) {
@@ -624,14 +778,14 @@ fn write_entry(
     }
 
     fs::create_dir_all(dir)
-        .with_context(|| format!("creating target directory {}", dir.display()))?;
+        .with_context(|| format!("creating target directory {}", dir.display()))?
 
     let contents = desktop::render(template, bin_path);
 
     // Write to a temporary file in the same directory, then rename, so a
     // crash can never leave a half-written entry in the menu.
     let tmp = path.with_extension("desktop.tmp");
-    fs::write(&tmp, contents).with_context(|| format!("writing {}", tmp.display()))?;
+    fs::write(&tmp, contents).with_context(|| format!("writing {}", tmp.display()))?
     if let Err(err) = fs::rename(&tmp, &path) {
         // Do not leave the partial file lying around in an applications dir.
         let _ = fs::remove_file(&tmp);
@@ -757,6 +911,29 @@ mod tests {
                 assert_eq!(prefixes, vec![PathBuf::from("/a"), PathBuf::from("/b")]);
                 assert!(matches!(action, WineCmd::Prefixes));
             }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wine_scan_parses() {
+        let cli = Cli::try_parse_from(["nexus-menu", "wine", "scan"]).unwrap();
+        match cli.command {
+            Some(Cmd::Wine { action, .. }) => {
+                assert!(matches!(action, WineCmd::Scan));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wine_install_parses() {
+        let cli = Cli::try_parse_from(["nexus-menu", "wine", "install", "--yes"]).unwrap();
+        match cli.command {
+            Some(Cmd::Wine { action, .. }) => match action {
+                WineCmd::Install { yes, .. } => assert!(yes),
+                _ => panic!("expected Install"),
+            },
             other => panic!("unexpected command: {other:?}"),
         }
     }
