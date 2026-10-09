@@ -3,8 +3,9 @@
 //! This is how the tool answers its central question: "is this installed
 //! program already reachable from the application menu?"
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
@@ -89,6 +90,11 @@ pub struct Registry {
     pub scanned_dirs: Vec<PathBuf>,
     /// Total `.desktop` files parsed.
     pub total_entries: usize,
+    /// Windows programs and shortcuts that some entry launches, resolved so
+    /// `dosdevices/c:` and `drive_c` spellings of one file compare equal.
+    referenced: HashSet<PathBuf>,
+    /// The `Exec` of every entry, whole and split into arguments.
+    execs: Vec<(String, Vec<String>)>,
 }
 
 impl Registry {
@@ -142,6 +148,14 @@ impl Registry {
                     continue;
                 }
 
+                if let Some(exec) = &parsed.exec {
+                    for path in desktop::referenced_paths(exec) {
+                        registry.referenced.insert(canonical(&path));
+                    }
+                    registry
+                        .execs
+                        .push((exec.clone(), desktop::tokenize_exec(exec)));
+                }
                 if let Some(program) = parsed.program() {
                     registry
                         .by_program
@@ -170,11 +184,36 @@ impl Registry {
         }
         self.by_stem.get(bin).map(|p| p.as_path())
     }
+
+    /// Whether some entry already launches this Windows program or shortcut,
+    /// by Wine's `start.exe /Unix` or as a launcher's executable argument.
+    pub fn references(&self, path: &Path) -> bool {
+        self.referenced.contains(&canonical(path))
+    }
+
+    /// Whether one entry's command line has every one of `wanted` as a whole
+    /// argument. Whole, not substring: `sacred-2` is not `sacred-2-gold`.
+    pub fn has_arguments(&self, wanted: &[&str]) -> bool {
+        self.execs
+            .iter()
+            .any(|(_, args)| wanted.iter().all(|w| args.iter().any(|a| a == w)))
+    }
+
+    /// Whether some entry's command line contains `text` anywhere.
+    pub fn exec_contains(&self, text: &str) -> bool {
+        self.execs.iter().any(|(exec, _)| exec.contains(text))
+    }
+}
+
+/// `path` with symlinks resolved, or unchanged if it does not exist.
+fn canonical(path: &Path) -> PathBuf {
+    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::Scratch;
 
     #[test]
     fn application_dirs_include_user_dir() {
@@ -195,6 +234,63 @@ mod tests {
     fn xdg_paths_are_absolute() {
         assert!(data_home().is_absolute());
         assert!(config_home().is_absolute());
+    }
+
+    #[test]
+    fn indexes_windows_programs_that_existing_entries_launch() {
+        let s = Scratch::new();
+        s.file(
+            "applications/wine-app.desktop",
+            r#"[Desktop Entry]
+Type=Application
+Name=Wine App
+Exec=env WINEPREFIX="/p/.wine" wine C:\\windows\\command\\start.exe /Unix /p/.wine/Start\\ Menu/My\\ App.lnk
+"#,
+        );
+        s.file(
+            "applications/launcher-game.desktop",
+            "[Desktop Entry]\nType=Application\nName=Game\nExec=flatpak run some.Launcher \"/g/Prefixes/X/drive_c/Game/game.exe\"\n",
+        );
+
+        let reg = Registry::build(Some(&s.path().join("applications")), false);
+        assert!(reg.references(Path::new("/p/.wine/Start Menu/My App.lnk")));
+        assert!(reg.references(Path::new("/g/Prefixes/X/drive_c/Game/game.exe")));
+        assert!(!reg.references(Path::new("/p/.wine/Other.lnk")));
+    }
+
+    #[test]
+    fn hidden_entries_do_not_count_as_covering_a_windows_app_when_asked_to_ignore_them() {
+        let s = Scratch::new();
+        s.file(
+            "applications/hidden.desktop",
+            "[Desktop Entry]\nType=Application\nName=H\nNoDisplay=true\nExec=wine start.exe /Unix /p/Hidden.lnk\n",
+        );
+        let dir = s.path().join("applications");
+        assert!(Registry::build(Some(&dir), false).references(Path::new("/p/Hidden.lnk")));
+        assert!(!Registry::build(Some(&dir), true).references(Path::new("/p/Hidden.lnk")));
+    }
+
+    #[test]
+    fn a_symlinked_spelling_of_a_shortcut_path_is_recognised() {
+        let s = Scratch::new();
+        let real = s.file("real/drive_c/Desktop/App.lnk", "");
+        // Mirrors dosdevices/c: -> ../drive_c inside a prefix.
+        std::fs::create_dir_all(s.path().join("real/dosdevices")).unwrap();
+        std::os::unix::fs::symlink(
+            s.path().join("real/drive_c"),
+            s.path().join("real/dosdevices/c:"),
+        )
+        .unwrap();
+        let via_link = s.path().join("real/dosdevices/c:/Desktop/App.lnk");
+        s.file(
+            "applications/e.desktop",
+            &format!(
+                "[Desktop Entry]\nType=Application\nName=A\nExec=wine start.exe /Unix {}\n",
+                via_link.display()
+            ),
+        );
+        let reg = Registry::build(Some(&s.path().join("applications")), false);
+        assert!(reg.references(&real));
     }
 
     #[test]

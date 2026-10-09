@@ -1,20 +1,22 @@
 //! Finding Wine prefixes on disk.
 //!
-//! A Wine prefix is a directory holding a `drive_c` tree plus the registry
-//! hives `system.reg` / `user.reg`. Prefixes come from four places:
+//! A Wine prefix is a directory that holds a `drive_c` directory. Every
+//! prefix has one and nothing else is required. Prefixes are looked for in:
 //!
-//! 1. every **top-level hidden directory** of `$HOME` that is itself a prefix
-//!    (`~/.wine`, `~/.insomniac`, …) — only the top level, because a recursive
-//!    search of the home directory turns up Proton `default_pfx` templates,
-//!    Bottles templates and launcher runtime files that no application was
-//!    ever installed into;
-//! 2. `$WINEPREFIX` and any location named with `--prefix`;
-//! 3. whatever each **launcher declares**: Faugus's `~/Faugus/*`, PortProton's
-//!    `~/PortProton/data/prefixes/*`, the `prefix:` of every Lutris game
-//!    config, and the `winePrefix` of every Heroic game config;
-//! 4. a bounded search for `drive_c` on **every local disk** mounted
-//!    elsewhere (`/media`, `/mnt`, …), which is where prefixes kept off the
-//!    system drive live. Network mounts are not searched.
+//! 1. `$WINEPREFIX` and anything named with `--prefix`;
+//! 2. folders directly inside `$HOME` (`~/.wine`, …), the standard place for
+//!    a plain Wine prefix;
+//! 3. the folders each launcher keeps its prefixes in (Faugus, PortProton,
+//!    PlayOnLinux, Lutris, WineZGUI, Bottles);
+//! 4. **everywhere else in your home directory**, hidden folders included;
+//! 5. **every local disk**.
+//!
+//! The search stops at each prefix it finds and skips directories that hold
+//! templates, runtimes, Steam's per-game prefixes, caches and backups.
+//!
+//! Each prefix records which tool manages it, because an app inside a
+//! launcher's prefix has to be started by that launcher: running a different
+//! Wine against it can upgrade or corrupt it.
 
 use std::collections::HashSet;
 use std::env;
@@ -23,15 +25,19 @@ use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
 
-/// Which tool manages a prefix. This decides how entries for apps inside it
-/// must be launched: through the launcher, never through bare `wine`.
+/// Which tool manages a prefix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Owner {
+    /// A plain Wine prefix in a standard place or one the user named.
     Wine,
     PortProton,
     Faugus,
     Lutris,
-    Heroic,
+    Bottles,
+    WineZGUI,
+    PlayOnLinux,
+    /// Found on a disk with nothing to say who made it.
+    Other,
 }
 
 impl Owner {
@@ -41,7 +47,10 @@ impl Owner {
             Owner::PortProton => "portproton",
             Owner::Faugus => "faugus",
             Owner::Lutris => "lutris",
-            Owner::Heroic => "heroic",
+            Owner::Bottles => "bottles",
+            Owner::WineZGUI => "winezgui",
+            Owner::PlayOnLinux => "playonlinux",
+            Owner::Other => "other",
         }
     }
 }
@@ -52,59 +61,138 @@ pub struct Prefix {
     pub owner: Owner,
 }
 
-/// Whether `dir` is the root of a Wine prefix.
-///
-/// `drive_c` alone is not enough — plenty of unrelated trees contain one — so
-/// a registry hive is required as well.
+/// Where each launcher keeps its prefixes, relative to `$HOME`.
+const LAUNCHER_ROOTS: &[(&str, Owner)] = &[
+    ("Faugus", Owner::Faugus),
+    ("PortProton", Owner::PortProton),
+    (
+        ".var/app/ru.linux_gaming.PortProton/data/prefixes",
+        Owner::PortProton,
+    ),
+    (".PlayOnLinux/wineprefix", Owner::PlayOnLinux),
+    ("Games", Owner::Lutris),
+    (
+        ".var/app/io.github.fastrizwaan.WineZGUI/data/winezgui/Prefixes",
+        Owner::WineZGUI,
+    ),
+    (
+        ".var/app/com.usebottles.bottles/data/bottles/bottles",
+        Owner::Bottles,
+    ),
+    (".local/share/bottles/bottles", Owner::Bottles),
+];
+
+/// How far below a root the search descends.
+const MAX_DEPTH: usize = 8;
+
+/// Whether `dir` is the root of a Wine prefix: it holds a `drive_c` directory.
 pub fn is_prefix(dir: &Path) -> bool {
     dir.join("drive_c").is_dir()
-        && (dir.join("system.reg").is_file() || dir.join("user.reg").is_file())
 }
 
-/// Immediate subdirectories of `dir`, following symlinks (`~/PortProton` is
-/// one), sorted for stable output.
-fn child_dirs(dir: &Path) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| fs::metadata(p).map(|m| m.is_dir()).unwrap_or(false))
-        .collect();
-    dirs.sort();
-    dirs
+/// Directories not worth entering: caches and build output, Steam's library
+/// (one throwaway prefix per game in `compatdata`), trash, Windows system
+/// trees, runtimes and templates, and backups, which are copies rather than
+/// prefixes anyone would add menu entries for.
+fn is_noise(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    matches!(
+        n.as_str(),
+        "cache"
+            | ".cache"
+            | ".git"
+            | "node_modules"
+            | "target"
+            | "venv"
+            | ".venv"
+            | "__pycache__"
+            | "compatdata"
+            | "compatibilitytools.d"
+            | "shadercache"
+            | "steamapps"
+            | "steamlibrary"
+            | "templates"
+            | "template"
+            | "runners"
+            | "trash"
+            | "$recycle.bin"
+            | "system volume information"
+            | "lost+found"
+            | "windows"
+            | "program files"
+            | "program files (x86)"
+            | "programdata"
+    ) || n.starts_with(".trash")
+        || n.contains("backup")
 }
 
-/// Immediate children of `dir` that are prefixes.
-fn child_prefixes(dir: &Path) -> Vec<PathBuf> {
-    child_dirs(dir)
-        .into_iter()
-        .filter(|p| is_prefix(p))
-        .collect()
+/// Proton and Wine runtimes ship a `default_pfx` that is copied for each new
+/// prefix. It has a `drive_c`, but it is the template, not a prefix.
+fn is_template_prefix(dir: &Path) -> bool {
+    dir.file_name().is_some_and(|n| {
+        n.to_string_lossy()
+            .to_ascii_lowercase()
+            .starts_with("default_pfx")
+    })
 }
 
-/// `dir` itself if it is a prefix, otherwise its immediate children that are.
-fn prefixes_at(dir: &Path) -> Vec<PathBuf> {
-    if is_prefix(dir) {
-        vec![dir.to_path_buf()]
-    } else {
-        child_prefixes(dir)
+/// Search `root` for prefixes. Never follows symlinks (except `root` itself),
+/// stops descending at a prefix, and skips [`is_noise`] directories.
+fn walk(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut it = WalkDir::new(root)
+        .follow_links(false)
+        .max_depth(MAX_DEPTH)
+        .sort_by_file_name()
+        .into_iter();
+
+    while let Some(entry) = it.next() {
+        let Ok(entry) = entry else { continue };
+        if !entry.file_type().is_dir() {
+            continue;
+        }
+        if is_prefix(entry.path()) {
+            if !is_template_prefix(entry.path()) {
+                found.push(entry.path().to_path_buf());
+            }
+            it.skip_current_dir();
+            continue;
+        }
+        if entry.depth() > 0 && entry.file_name().to_str().is_some_and(is_noise) {
+            it.skip_current_dir();
+        }
     }
+    found
 }
 
-/// The prefix a launcher config names. Proton-style layouts keep the real
-/// prefix in a `pfx` subdirectory of the directory the launcher records.
-fn declared_prefix(named: &Path) -> Option<PathBuf> {
-    if is_prefix(named) {
-        return Some(named.to_path_buf());
+/// Which launcher a path belongs to, going by the names in it.
+fn owner_by_path(path: &Path) -> Option<Owner> {
+    for component in path.components() {
+        let name = component.as_os_str().to_string_lossy().to_ascii_lowercase();
+        if name.contains("portproton") {
+            return Some(Owner::PortProton);
+        }
+        if name.contains("faugus") {
+            return Some(Owner::Faugus);
+        }
+        if name.contains("winezgui") {
+            return Some(Owner::WineZGUI);
+        }
+        if name.contains("bottles") {
+            return Some(Owner::Bottles);
+        }
+        if name.contains("playonlinux") {
+            return Some(Owner::PlayOnLinux);
+        }
+        if name.contains("lutris") {
+            return Some(Owner::Lutris);
+        }
     }
-    let nested = named.join("pfx");
-    is_prefix(&nested).then_some(nested)
+    None
 }
 
-/// Find every Wine prefix, in priority order: when two sources name the same
-/// directory the earlier one wins, so `~/.wine` stays a plain Wine prefix even
-/// though a Lutris game also points at it.
+/// Find every Wine prefix. When two sources name the same directory the
+/// earlier one wins, so a prefix the user named stays what they called it.
 pub fn discover(
     home: &Path,
     env_prefix: Option<&Path>,
@@ -120,118 +208,53 @@ pub fn discover(
         }
     };
 
-    // 1. Top-level hidden directories that are prefixes.
-    for dir in child_dirs(home) {
-        let hidden = dir
-            .file_name()
-            .is_some_and(|n| n.to_string_lossy().starts_with('.'));
-        if hidden && is_prefix(&dir) {
-            add(dir, Owner::Wine);
-        }
-    }
-
-    // 2. $WINEPREFIX and --prefix.
-    for location in env_prefix
+    // 1. $WINEPREFIX and --prefix: plain Wine unless the path says otherwise.
+    for root in env_prefix
         .into_iter()
         .chain(extra.iter().map(PathBuf::as_path))
     {
-        for prefix in prefixes_at(location) {
-            let owner = owner_by_path(&prefix);
+        for prefix in walk(root) {
+            let owner = owner_by_path(&prefix).unwrap_or(Owner::Wine);
             add(prefix, owner);
         }
     }
 
-    // 3. What each launcher declares.
-    for prefix in child_prefixes(&home.join("Faugus")) {
-        add(prefix, Owner::Faugus);
-    }
-    for prefix in child_prefixes(&home.join("PortProton/data/prefixes")) {
-        add(prefix, Owner::PortProton);
-    }
-    for named in lutris_prefixes(home) {
-        if let Some(prefix) = declared_prefix(&named) {
-            add(prefix, Owner::Lutris);
-        }
-    }
-    for named in heroic_prefixes(home) {
-        if let Some(prefix) = declared_prefix(&named) {
-            add(prefix, Owner::Heroic);
+    // 2. Folders directly inside home that are prefixes: ~/.wine and kin.
+    if let Ok(read) = fs::read_dir(home) {
+        let mut direct: Vec<PathBuf> = read
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| is_prefix(p))
+            .collect();
+        direct.sort();
+        for prefix in direct {
+            add(prefix, Owner::Wine);
         }
     }
 
-    // 4. Every other prefix on the local disks. Last, so a launcher that
-    // declares a prefix keeps ownership of it.
+    // 3. Each launcher's own folder.
+    for (relative, owner) in LAUNCHER_ROOTS {
+        for prefix in walk(&home.join(relative)) {
+            add(prefix, *owner);
+        }
+    }
+
+    // 4. Everywhere else in home, hidden folders included. After the launcher
+    // folders, so they keep ownership of their own prefixes; what is left has
+    // no launcher in its path to say who manages it.
+    for prefix in walk(home) {
+        let owner = owner_by_path(&prefix).unwrap_or(Owner::Other);
+        add(prefix, owner);
+    }
+
+    // 5. Every local disk.
     for drive in drives {
-        for prefix in walk_drive(drive) {
-            let owner = owner_by_path(&prefix);
+        for prefix in walk(drive) {
+            let owner = owner_by_path(&prefix).unwrap_or(Owner::Other);
             add(prefix, owner);
         }
     }
 
-    found
-}
-
-/// How far below a drive's root the search descends. PortProton keeps a prefix
-/// four levels down (`PortProton/data/prefixes/NAME`) and Heroic five; eight
-/// leaves room without crawling whole disks.
-const DRIVE_MAX_DEPTH: usize = 8;
-
-/// Directories not worth entering while searching a disk: caches and build
-/// output, Steam's library (one throwaway prefix per game in `compatdata`),
-/// trash, Windows system trees, and backups, which are copies rather than
-/// prefixes anyone would add menu entries for.
-fn is_noise(name: &str) -> bool {
-    let n = name.to_ascii_lowercase();
-    matches!(
-        n.as_str(),
-        "cache"
-            | ".cache"
-            | ".git"
-            | "node_modules"
-            | "target"
-            | "venv"
-            | ".venv"
-            | "__pycache__"
-            | "compatdata"
-            | "shadercache"
-            | "steamapps"
-            | "steamlibrary"
-            | "trash"
-            | "$recycle.bin"
-            | "system volume information"
-            | "lost+found"
-            | "windows"
-            | "program files"
-            | "program files (x86)"
-            | "programdata"
-    ) || n.starts_with(".trash")
-        || n.contains("backup")
-}
-
-/// Search one disk for prefixes: never follows symlinks, stops descending the
-/// moment it finds a prefix (everything inside is the prefix's own content),
-/// and skips [`is_noise`] directories.
-fn walk_drive(root: &Path) -> Vec<PathBuf> {
-    let mut found = Vec::new();
-    let mut it = WalkDir::new(root)
-        .follow_links(false)
-        .max_depth(DRIVE_MAX_DEPTH)
-        .into_iter();
-
-    while let Some(entry) = it.next() {
-        let Ok(entry) = entry else { continue };
-        if !entry.file_type().is_dir() {
-            continue;
-        }
-        if is_prefix(entry.path()) {
-            found.push(entry.path().to_path_buf());
-            it.skip_current_dir();
-            continue;
-        }
-        if entry.depth() > 0 && entry.file_name().to_str().is_some_and(is_noise) {
-            it.skip_current_dir();
-        }
-    }
     found
 }
 
@@ -245,7 +268,7 @@ pub fn drive_roots(home: &Path) -> Vec<PathBuf> {
 /// Pick the searchable disks out of `/proc/mounts` text.
 ///
 /// A disk is a mount whose source is a block device. That excludes network
-/// shares (NFS, SMB, SSHFS — slow to crawl and not where prefixes live),
+/// shares (NFS, SMB, SSHFS: slow to crawl and not where prefixes live),
 /// pseudo filesystems, and loop devices (snaps). The root filesystem and the
 /// system mount points are skipped, as is anything at or under `/home` or
 /// containing the home directory, since home is searched by its own rules.
@@ -301,91 +324,6 @@ fn unescape_mount(s: &str) -> String {
         .replace("\\134", "\\")
 }
 
-/// Owner of an explicitly named location, judged by its path: a prefix inside
-/// a PortProton or Faugus tree belongs to that launcher.
-fn owner_by_path(prefix: &Path) -> Owner {
-    for component in prefix.components() {
-        let name = component.as_os_str().to_string_lossy().to_ascii_lowercase();
-        if name.contains("portproton") {
-            return Owner::PortProton;
-        }
-        if name.contains("faugus") {
-            return Owner::Faugus;
-        }
-    }
-    Owner::Wine
-}
-
-fn files_with_extension(dir: &Path, ext: &str) -> Vec<PathBuf> {
-    let mut files: Vec<PathBuf> = fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some(ext))
-        .collect();
-    files.sort();
-    files
-}
-
-/// The prefix of every Lutris game config, native or Flatpak.
-fn lutris_prefixes(home: &Path) -> Vec<PathBuf> {
-    [
-        home.join(".config/lutris/games"),
-        home.join(".var/app/net.lutris.Lutris/config/lutris/games"),
-    ]
-    .iter()
-    .flat_map(|dir| files_with_extension(dir, "yml"))
-    .filter_map(|path| fs::read_to_string(path).ok())
-    .filter_map(|text| parse_lutris_prefix(&text))
-    .collect()
-}
-
-/// The `winePrefix` of every Heroic game config, native or Flatpak.
-fn heroic_prefixes(home: &Path) -> Vec<PathBuf> {
-    [
-        home.join(".config/heroic/GamesConfig"),
-        home.join(".var/app/com.heroicgameslauncher.hgl/config/heroic/GamesConfig"),
-    ]
-    .iter()
-    .flat_map(|dir| files_with_extension(dir, "json"))
-    .filter_map(|path| fs::read_to_string(path).ok())
-    .flat_map(|text| parse_heroic_prefixes(&text))
-    .collect()
-}
-
-/// The `game.prefix` of a Lutris game config.
-///
-/// Lutris YAML repeats `prefix:` inside installer scripts at deeper
-/// indentation, often as `$GAMEDIR`. Only the two-space-indented absolute one
-/// is the game's own, so that is the only one read — no YAML parser needed.
-pub fn parse_lutris_prefix(text: &str) -> Option<PathBuf> {
-    for line in text.lines() {
-        if let Some(rest) = line.strip_prefix("  prefix: ") {
-            let value = rest.trim().trim_matches(|c| c == '"' || c == '\'');
-            if value.starts_with('/') {
-                return Some(PathBuf::from(value));
-            }
-        }
-    }
-    None
-}
-
-/// Every `winePrefix` named in a Heroic `GamesConfig/*.json` file, which is a
-/// map of app name to settings.
-pub fn parse_heroic_prefixes(text: &str) -> Vec<PathBuf> {
-    let Ok(serde_json::Value::Object(games)) = serde_json::from_str::<serde_json::Value>(text)
-    else {
-        return Vec::new();
-    };
-    games
-        .values()
-        .filter_map(|settings| settings.get("winePrefix")?.as_str())
-        .filter(|p| p.starts_with('/'))
-        .map(PathBuf::from)
-        .collect()
-}
-
 /// `$HOME`, falling back to `/` as the rest of the crate does.
 pub fn home() -> PathBuf {
     env::var_os("HOME")
@@ -396,43 +334,9 @@ pub fn home() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use crate::testutil::Scratch;
 
-    /// A scratch directory removed on drop, so tests need no extra crate.
-    struct Scratch(PathBuf);
-
-    impl Scratch {
-        fn new() -> Self {
-            static N: AtomicUsize = AtomicUsize::new(0);
-            let dir = env::temp_dir().join(format!(
-                "nexus-menu-test-{}-{}",
-                std::process::id(),
-                N.fetch_add(1, Ordering::SeqCst)
-            ));
-            fs::create_dir_all(&dir).unwrap();
-            Scratch(dir)
-        }
-
-        fn path(&self) -> &Path {
-            &self.0
-        }
-
-        /// Create a valid prefix at `rel`.
-        fn prefix(&self, rel: &str) -> PathBuf {
-            let dir = self.0.join(rel);
-            fs::create_dir_all(dir.join("drive_c")).unwrap();
-            fs::write(dir.join("system.reg"), "WINE REGISTRY Version 2\n").unwrap();
-            dir
-        }
-    }
-
-    impl Drop for Scratch {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-
-    /// The home-directory sources only, with no disks searched.
+    /// Home and the named locations only, with no disks searched.
     fn discover(home: &Path, env_prefix: Option<&Path>, extra: &[PathBuf]) -> Vec<Prefix> {
         super::discover(home, env_prefix, extra, &[])
     }
@@ -455,182 +359,142 @@ mod tests {
     }
 
     #[test]
-    fn a_prefix_needs_drive_c_and_a_registry_hive() {
+    fn a_directory_with_drive_c_is_a_prefix_and_nothing_else_is_required() {
         let s = Scratch::new();
-        assert!(is_prefix(&s.prefix("good")));
+        assert!(is_prefix(&s.prefix("with_hive")));
 
-        let only_drive_c = s.path().join("only_drive_c");
-        fs::create_dir_all(only_drive_c.join("drive_c")).unwrap();
-        assert!(!is_prefix(&only_drive_c));
+        let bare = s.path().join("bare");
+        fs::create_dir_all(bare.join("drive_c")).unwrap();
+        assert!(is_prefix(&bare));
 
         let only_reg = s.path().join("only_reg");
         fs::create_dir_all(&only_reg).unwrap();
-        fs::write(only_reg.join("user.reg"), "").unwrap();
+        fs::write(only_reg.join("system.reg"), "").unwrap();
         assert!(!is_prefix(&only_reg));
 
-        let user_hive = s.path().join("user_hive");
-        fs::create_dir_all(user_hive.join("drive_c")).unwrap();
-        fs::write(user_hive.join("user.reg"), "").unwrap();
-        assert!(is_prefix(&user_hive), "user.reg alone is a valid hive");
+        // drive_c has to be a directory, not a file.
+        let file = s.path().join("file");
+        fs::create_dir_all(&file).unwrap();
+        fs::write(file.join("drive_c"), "").unwrap();
+        assert!(!is_prefix(&file));
     }
 
     #[test]
-    fn finds_top_level_hidden_directories_that_are_prefixes() {
+    fn folders_directly_inside_home_are_plain_wine_prefixes() {
         let s = Scratch::new();
         let a = s.prefix(".wine");
         let b = s.prefix(".insomniac");
+        let c = s.prefix("mywine");
         let found = discover(s.path(), None, &[]);
-        // Sorted by name, so the output is stable between runs.
-        assert_eq!(paths(&found), vec![b.clone(), a.clone()]);
-        assert_eq!(owner_of(&found, &a), Owner::Wine);
-        assert_eq!(owner_of(&found, &b), Owner::Wine);
+        assert_eq!(paths(&found), vec![b.clone(), a.clone(), c.clone()]);
+        for p in [&a, &b, &c] {
+            assert_eq!(owner_of(&found, p), Owner::Wine);
+        }
     }
 
     #[test]
-    fn does_not_search_below_the_top_level() {
+    fn prefixes_anywhere_else_in_home_are_found_but_not_treated_as_plain_wine() {
         let s = Scratch::new();
-        // These are exactly the junk a recursive walk turns up on a real
-        // machine: templates and runtime files, not installed-app prefixes.
-        s.prefix(".local/share/somewhere/pfx");
-        s.prefix(".steam/compatibilitytools.d/GE-Proton/files/share/default_pfx");
-        s.prefix(".var/app/com.usebottles.bottles/data/bottles/templates/abc");
-        s.prefix(".PlayOnLinux/wineprefix/ntlite");
-        assert!(discover(s.path(), None, &[]).is_empty());
-    }
-
-    #[test]
-    fn ignores_visible_directories_that_are_not_launcher_roots() {
-        let s = Scratch::new();
-        s.prefix("Documents/stray");
-        s.prefix("Downloads");
-        assert!(discover(s.path(), None, &[]).is_empty());
-    }
-
-    #[test]
-    fn a_hidden_directory_without_a_registry_hive_is_not_a_prefix() {
-        let s = Scratch::new();
-        fs::create_dir_all(s.path().join(".cache/drive_c")).unwrap();
-        fs::create_dir_all(s.path().join(".config")).unwrap();
-        assert!(discover(s.path(), None, &[]).is_empty());
-    }
-
-    #[test]
-    fn a_hidden_file_is_ignored() {
-        let s = Scratch::new();
-        fs::write(s.path().join(".bashrc"), "").unwrap();
-        assert!(discover(s.path(), None, &[]).is_empty());
-    }
-
-    #[test]
-    fn faugus_prefixes_are_the_children_of_the_faugus_directory() {
-        let s = Scratch::new();
-        let a = s.prefix("Faugus/default");
-        let b = s.prefix("Faugus/other");
-        fs::create_dir_all(s.path().join("Faugus/not-a-prefix")).unwrap();
+        let hidden = s.prefix(".local/share/somewhere/pfx");
+        let visible = s.prefix("Documents/stray");
         let found = discover(s.path(), None, &[]);
-        assert_eq!(paths(&found), vec![a.clone(), b]);
-        assert_eq!(owner_of(&found, &a), Owner::Faugus);
+        assert_eq!(found.len(), 2, "{found:?}");
+        // Nothing in the path says who manages them, so they are left alone.
+        assert_eq!(owner_of(&found, &hidden), Owner::Other);
+        assert_eq!(owner_of(&found, &visible), Owner::Other);
     }
 
     #[test]
-    fn portproton_prefixes_follow_a_symlinked_install_without_duplicating() {
+    fn the_home_search_names_a_launcher_from_the_path_and_skips_junk() {
+        let s = Scratch::new();
+        let winezgui =
+            s.prefix(".var/app/io.github.fastrizwaan.WineZGUI/data/winezgui/Prefixes/x-1");
+        s.prefix(".var/app/io.github.fastrizwaan.WineZGUI/data/winezgui/Templates/WineZGUI-win64");
+        s.prefix(".steam/debian-installation/compatibilitytools.d/GE/files/share/default_pfx");
+        s.prefix(".local/share/lutris/runners/proton/GE/files/share/default_pfx");
+        s.prefix(".var/app/ru.linux_gaming.PortProton/data/dist/GE/share/default_pfx");
+        s.prefix(".local/share/Steam/steamapps/compatdata/1/pfx");
+        s.prefix(".cache/x/pfx");
+        let found = discover(s.path(), None, &[]);
+        assert_eq!(paths(&found), vec![winezgui.clone()]);
+        assert_eq!(owner_of(&found, &winezgui), Owner::WineZGUI);
+    }
+
+    #[test]
+    fn each_launcher_folder_is_searched_and_owned_by_that_launcher() {
+        let s = Scratch::new();
+        let faugus = s.prefix("Faugus/default");
+        let portproton = s.prefix("PortProton/data/prefixes/DEFAULT");
+        let playonlinux = s.prefix(".PlayOnLinux/wineprefix/ntlite");
+        let lutris = s.prefix("Games/gog/sacred-2");
+        let winezgui =
+            s.prefix(".var/app/io.github.fastrizwaan.WineZGUI/data/winezgui/Prefixes/sacred2-58");
+        let bottles = s.prefix(".var/app/com.usebottles.bottles/data/bottles/bottles/Gaming");
+        let native_bottles = s.prefix(".local/share/bottles/bottles/Other");
+
+        let found = discover(s.path(), None, &[]);
+        assert_eq!(found.len(), 7, "{found:?}");
+        assert_eq!(owner_of(&found, &faugus), Owner::Faugus);
+        assert_eq!(owner_of(&found, &portproton), Owner::PortProton);
+        assert_eq!(owner_of(&found, &playonlinux), Owner::PlayOnLinux);
+        assert_eq!(owner_of(&found, &lutris), Owner::Lutris);
+        assert_eq!(owner_of(&found, &winezgui), Owner::WineZGUI);
+        assert_eq!(owner_of(&found, &bottles), Owner::Bottles);
+        assert_eq!(owner_of(&found, &native_bottles), Owner::Bottles);
+    }
+
+    #[test]
+    fn templates_runtimes_and_throwaway_prefixes_are_not_prefixes() {
+        let s = Scratch::new();
+        let bottles = ".var/app/com.usebottles.bottles/data/bottles";
+        s.prefix(&format!("{bottles}/templates/abc"));
+        let keep = s.prefix(&format!("{bottles}/bottles/Gaming"));
+        // A runtime's template prefix, wherever it sits.
+        s.prefix("Games/runtime/files/share/default_pfx");
+        s.prefix("Games/runtime/files/share/default_pfx_arm64");
+        // Steam's per-game prefixes and backups.
+        s.prefix("Games/steamapps/compatdata/1234/pfx");
+        s.prefix("Games/wine-backup-pre-wine11/pfx");
+        s.prefix("Games/runners/proton/GE/default_pfx");
+
+        let found = discover(s.path(), None, &[]);
+        assert_eq!(paths(&found), vec![keep]);
+    }
+
+    #[test]
+    fn a_symlinked_launcher_folder_is_followed_without_duplicating() {
         let s = Scratch::new();
         // Mirrors ~/PortProton -> ~/.var/app/ru.linux_gaming.PortProton
         let real = s.prefix(".var/app/ru.linux_gaming.PortProton/data/prefixes/DEFAULT");
-        s.prefix(".var/app/ru.linux_gaming.PortProton/data/prefixes/GOG");
-        fs::create_dir_all(
-            s.path()
-                .join(".var/app/ru.linux_gaming.PortProton/data/prefixes/DOTNET"),
-        )
-        .unwrap();
         std::os::unix::fs::symlink(
             s.path().join(".var/app/ru.linux_gaming.PortProton"),
             s.path().join("PortProton"),
         )
         .unwrap();
-
         let found = discover(s.path(), None, &[]);
-        assert_eq!(found.len(), 2, "{found:?}");
-        let default = found
-            .iter()
-            .find(|p| p.path.ends_with("DEFAULT"))
-            .expect("DEFAULT prefix");
-        assert_eq!(default.owner, Owner::PortProton);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].owner, Owner::PortProton);
         assert_eq!(
-            fs::canonicalize(&default.path).unwrap(),
+            fs::canonicalize(&found[0].path).unwrap(),
             fs::canonicalize(&real).unwrap()
         );
     }
 
     #[test]
-    fn lutris_config_prefixes_are_found_wherever_they_live() {
+    fn the_search_never_descends_into_a_prefix_or_through_symlinks() {
         let s = Scratch::new();
-        let prefix = s.prefix("Games/gog/sacred-2-remastered");
-        let dir = s.path().join(".config/lutris/games");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(
-            dir.join("sacred-1.yml"),
-            format!(
-                "game:\n  exe: x.exe\n  prefix: {}\nscript:\n  game:\n    prefix: $GAMEDIR\n",
-                prefix.display()
-            ),
-        )
-        .unwrap();
+        let outer = s.prefix("Games/outer");
+        s.prefix("Games/outer/drive_c/users/u/inner");
+        // Outside home, so the only way to reach it is through the symlink.
+        let outside = Scratch::new();
+        let real = outside.prefix("real");
+        std::os::unix::fs::symlink(&real, s.path().join("Games/link")).unwrap();
         let found = discover(s.path(), None, &[]);
-        assert_eq!(paths(&found), vec![prefix.clone()]);
-        assert_eq!(owner_of(&found, &prefix), Owner::Lutris);
+        assert_eq!(paths(&found), vec![outer]);
     }
 
     #[test]
-    fn heroic_proton_prefixes_resolve_to_the_pfx_subdirectory() {
-        let s = Scratch::new();
-        let pfx = s.prefix("Games/Heroic/Prefixes/default/Game/pfx");
-        let dir = s
-            .path()
-            .join(".var/app/com.heroicgameslauncher.hgl/config/heroic/GamesConfig");
-        fs::create_dir_all(&dir).unwrap();
-        // Heroic records the directory above `pfx`.
-        fs::write(
-            dir.join("abc.json"),
-            format!(
-                "{{\"abc\": {{\"winePrefix\": \"{}\"}}}}",
-                pfx.parent().unwrap().display()
-            ),
-        )
-        .unwrap();
-        let found = discover(s.path(), None, &[]);
-        assert_eq!(paths(&found), vec![pfx.clone()]);
-        assert_eq!(owner_of(&found, &pfx), Owner::Heroic);
-    }
-
-    #[test]
-    fn a_launcher_config_naming_a_missing_prefix_is_skipped() {
-        let s = Scratch::new();
-        let dir = s.path().join(".config/lutris/games");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("gone.yml"), "game:\n  prefix: /does/not/exist\n").unwrap();
-        assert!(discover(s.path(), None, &[]).is_empty());
-    }
-
-    #[test]
-    fn a_prefix_named_by_several_sources_is_reported_once_as_plain_wine() {
-        let s = Scratch::new();
-        // ~/.wine is a plain prefix, and a Lutris game also points at it.
-        let wine = s.prefix(".wine");
-        let dir = s.path().join(".config/lutris/games");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(
-            dir.join("ascent.yml"),
-            format!("game:\n  prefix: {}\n", wine.display()),
-        )
-        .unwrap();
-        let found = discover(s.path(), None, &[]);
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].owner, Owner::Wine);
-    }
-
-    #[test]
-    fn explicit_location_may_be_a_prefix_or_a_directory_of_prefixes() {
+    fn explicit_locations_may_be_a_prefix_or_hold_prefixes() {
         let home = Scratch::new();
         let outside = Scratch::new();
         let single = outside.prefix("custom");
@@ -651,55 +515,35 @@ mod tests {
     }
 
     #[test]
-    fn wineprefix_environment_prefix_is_included() {
+    fn wineprefix_environment_prefix_is_included_and_repeats_collapse() {
         let home = Scratch::new();
         let elsewhere = Scratch::new();
         let p = elsewhere.prefix("custom");
-        assert_eq!(paths(&discover(home.path(), Some(&p), &[])), vec![p]);
-    }
-
-    #[test]
-    fn repeated_locations_report_a_prefix_once() {
-        let s = Scratch::new();
-        let p = s.prefix(".wine");
-        let found = discover(s.path(), None, &[p.clone(), p.clone()]);
+        let found = super::discover(home.path(), Some(&p), &[p.clone(), p.clone()], &[]);
         assert_eq!(paths(&found), vec![p]);
     }
 
     #[test]
-    fn lutris_prefix_ignores_installer_script_values() {
-        let text = "game:\n  prefix: /home/u/Games/x\nscript:\n  installer:\n  - task:\n      prefix: /other\n    prefix: $GAMEDIR\n";
-        assert_eq!(
-            parse_lutris_prefix(text),
-            Some(PathBuf::from("/home/u/Games/x"))
-        );
-        assert_eq!(parse_lutris_prefix("game:\n  prefix: $GAMEDIR\n"), None);
-        assert_eq!(parse_lutris_prefix(""), None);
-    }
-
-    #[test]
-    fn a_drive_search_finds_prefixes_at_the_depths_launchers_use() {
+    fn a_disk_search_finds_prefixes_and_names_the_launcher_from_the_path() {
         let home = Scratch::new();
         let disk = Scratch::new();
         let portproton = disk.prefix("PortProton/data/prefixes/BATTLE_NET");
-        let heroic = disk.prefix("Heroic/Prefixes/default/Game/pfx");
+        let bare = disk.path().join("Stuff/bare");
+        fs::create_dir_all(bare.join("drive_c")).unwrap();
         let loose = disk.prefix("prefixes/mygame");
         let found = discover_drives(home.path(), &[disk.path().to_path_buf()]);
-        for p in [&portproton, &heroic, &loose] {
-            assert!(paths(&found).contains(p), "missing {}", p.display());
-        }
-        assert_eq!(found.len(), 3);
+        assert_eq!(found.len(), 3, "{found:?}");
         assert_eq!(owner_of(&found, &portproton), Owner::PortProton);
-        assert_eq!(owner_of(&found, &loose), Owner::Wine);
+        assert_eq!(owner_of(&found, &loose), Owner::Other);
+        assert_eq!(owner_of(&found, &bare), Owner::Other);
     }
 
     #[test]
-    fn a_drive_search_prunes_backups_steam_trash_and_build_output() {
+    fn a_disk_search_prunes_backups_steam_trash_and_build_output() {
         let home = Scratch::new();
         let disk = Scratch::new();
         disk.prefix("wine-backup-pre-wine11/pfx");
         disk.prefix("SteamLibrary/steamapps/compatdata/1234/pfx");
-        disk.prefix("steamapps/compatdata/9/pfx");
         disk.prefix("$RECYCLE.BIN/x");
         disk.prefix(".Trash-1000/files/old");
         disk.prefix("Repos/project/target/debug/pfx");
@@ -710,45 +554,29 @@ mod tests {
     }
 
     #[test]
-    fn a_drive_search_never_descends_into_a_prefix() {
-        let home = Scratch::new();
-        let disk = Scratch::new();
-        let outer = disk.prefix("Games/outer");
-        disk.prefix("Games/outer/drive_c/users/u/inner");
-        let found = discover_drives(home.path(), &[disk.path().to_path_buf()]);
-        assert_eq!(paths(&found), vec![outer]);
-    }
-
-    #[test]
-    fn a_drive_search_is_depth_limited_and_ignores_symlinks() {
+    fn a_disk_search_is_depth_limited() {
         let home = Scratch::new();
         let disk = Scratch::new();
         let ok = disk.prefix("a/b/c/d/e/f/g/h");
         disk.prefix("z/b/c/d/e/f/g/h/i");
-        let real = disk.prefix("elsewhere/real");
-        fs::create_dir_all(disk.path().join("links")).unwrap();
-        std::os::unix::fs::symlink(&real, disk.path().join("links/to-real")).unwrap();
         let found = discover_drives(home.path(), &[disk.path().to_path_buf()]);
-        assert!(paths(&found).contains(&ok));
-        assert!(paths(&found).contains(&real));
-        assert_eq!(found.len(), 2, "{found:?}");
+        assert_eq!(paths(&found), vec![ok]);
     }
 
     #[test]
-    fn a_launcher_that_declares_a_prefix_keeps_ownership_over_the_drive_search() {
+    fn the_first_source_to_name_a_prefix_decides_its_owner() {
         let home = Scratch::new();
         let disk = Scratch::new();
-        let prefix = disk.prefix("Games/gog/sacred");
-        let dir = home.path().join(".config/lutris/games");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(
-            dir.join("sacred.yml"),
-            format!("game:\n  prefix: {}\n", prefix.display()),
-        )
-        .unwrap();
-        let found = discover_drives(home.path(), &[disk.path().to_path_buf()]);
+        // Named explicitly, so it is plain Wine even though a disk holds it.
+        let p = disk.prefix("Games/mine");
+        let found = super::discover(
+            home.path(),
+            None,
+            std::slice::from_ref(&p),
+            &[disk.path().to_path_buf()],
+        );
         assert_eq!(found.len(), 1);
-        assert_eq!(owner_of(&found, &prefix), Owner::Lutris);
+        assert_eq!(owner_of(&found, &p), Owner::Wine);
     }
 
     #[test]
@@ -788,13 +616,27 @@ tmpfs /run/user/1000 tmpfs rw 0 0
     }
 
     #[test]
-    fn heroic_parsing_tolerates_junk() {
-        assert!(parse_heroic_prefixes("not json").is_empty());
-        assert!(parse_heroic_prefixes("[1,2]").is_empty());
-        assert!(parse_heroic_prefixes("{\"a\": {\"winePrefix\": \"relative\"}}").is_empty());
-        assert_eq!(
-            parse_heroic_prefixes("{\"a\": {\"winePrefix\": \"/p/q\"}, \"b\": {}}"),
-            vec![PathBuf::from("/p/q")]
-        );
+    fn noise_rules() {
+        for n in [
+            ".cache",
+            "Cache",
+            ".git",
+            "node_modules",
+            "compatdata",
+            "steamapps",
+            "Templates",
+            "runners",
+            ".Trash-1000",
+            "Trash",
+            "wine-backup-pre-wine11",
+            "Backup",
+        ] {
+            assert!(is_noise(n), "{n} should be noise");
+        }
+        for n in [
+            ".wine", "Games", "prefixes", "pfx", "DEFAULT", "bottles", "Prefixes",
+        ] {
+            assert!(!is_noise(n), "{n} should not be noise");
+        }
     }
 }

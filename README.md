@@ -355,6 +355,58 @@ Subcommands and flags complete; the positional shell name after
 `completions` does not, because the generator does not emit hints for
 positional arguments in fish.
 
+### Windows apps
+
+```fish
+nexus-menu wine scan                 # what is installed but not in the menu
+nexus-menu wine install --dry-run    # exactly what would be written
+nexus-menu wine install              # choose from a numbered list
+```
+
+Finds the Windows applications **you installed** in your Wine prefixes and
+creates a menu entry for each one that has none. Every app is started the way
+its own launcher starts things. Pointing a different Wine at a launcher's
+prefix can upgrade or corrupt it, so that is never done.
+
+| Where the app lives | How it is found | What its entry runs |
+| --- | --- | --- |
+| Plain Wine (`~/.wine`, `$WINEPREFIX`, …) | Start Menu and Desktop shortcuts | `wine start.exe /Unix <shortcut>`, as Wine's own menu builder does |
+| PortProton | the same, resolved to the program | `flatpak run ru.linux_gaming.PortProton "<exe>"`, or its `start.sh` if it is not a Flatpak |
+| Faugus | the same, in its default prefix only | Faugus's file handler: `flatpak run … --command=faugus-launcher … @@ "<exe>" @@` |
+| Lutris | each game's config in `~/.config/lutris/games` | `env LUTRIS_SKIP_INIT=1 lutris lutris:rungame/<slug>` |
+| Bottles | the programs in each bottle's `bottle.yml` | `bottles-cli run -b <bottle> -p <program>` |
+| WineZGUI | the `.desktop` file it keeps in each prefix | that file, copied unchanged |
+
+Which shortcuts count:
+
+- Windows and Wine components do not: the Accessories, System Tools and
+  Startup folders, uninstallers, readmes, manuals, help and website links.
+- For PortProton and Faugus the shortcut has to point at a real `.exe`,
+  `.bat`, `.cmd` or `.com` inside the prefix. Web links (`.url`), documents
+  and help files are skipped.
+- An app on several desktops, or in the Start Menu and on a desktop, is listed
+  once.
+
+"Already in the menu" means some entry launches that app, whichever tool made
+it: by shortcut or program path, by Lutris slug, by bottle and program, or by
+WineZGUI prefix. Run `install` twice and the second run creates nothing.
+
+Left alone, and reported as such: PlayOnLinux prefixes; prefixes found on a
+disk with nothing in their path to say who manages them (`other`); and Faugus
+prefixes other than its default one, because Faugus runs every file in
+`<default-prefix>/default`. An app whose launcher is not installed is counted
+as "launcher not installed" and skipped. Heroic is not supported.
+
+Good to know:
+
+- A shortcut's command-line arguments are not carried over to PortProton and
+  Faugus entries, only the program.
+- Lutris's own menu shortcuts use a numeric game id, which cannot be matched
+  to a slug, so a game that already has a Lutris-made shortcut may be offered
+  again.
+- Entries use the generic `wine` icon.
+- Everything written carries the generated marker, so `remove` takes it away.
+
 ### Wine prefixes
 
 ```fish
@@ -362,41 +414,32 @@ nexus-menu wine prefixes
 nexus-menu wine prefixes --prefix /media/games/PortProton/data/prefixes
 ```
 
-Lists the Wine prefixes the tool can see, and which tool manages each. This
-is the discovery step for Windows applications; it is read-only and
-launches nothing. Prefixes come from four places and nowhere else:
+Lists every prefix the tool can see and who manages it. A directory is a
+prefix if it has a `drive_c` folder; nothing else is required. Prefixes are
+looked for in these places, and the first to name one decides its owner:
 
-- **Top-level hidden folders of your home directory** that are prefixes —
-  `~/.wine`, `~/.insomniac`, and so on. Only the top level is looked at:
-  a recursive search finds Proton `default_pfx` templates and runtime files
-  that nobody installed applications into.
-- **`$WINEPREFIX` and `--prefix DIR`** (repeatable). `DIR` may be a prefix
-  or a directory of prefixes, so it is also how to reach prefixes outside
-  your home, such as ones on another disk.
-- **What each launcher declares**: Faugus's `~/Faugus/*`, PortProton's
-  `~/PortProton/data/prefixes/*`, the `prefix:` of each Lutris game config,
-  and the `winePrefix` of each Heroic game config.
-- **Every local disk**: a search for `drive_c` on each mounted drive that is a
-  real block device (`/media`, `/mnt`, `/run/media`, …), up to eight levels
-  deep. It stops at each prefix it finds and skips caches, build output
-  (`target`, `node_modules`), Steam libraries and `compatdata`, trash,
-  Windows system folders, and any directory with `backup` in its name.
-  Network mounts such as NFS are never searched.
+- **`$WINEPREFIX` and `--prefix DIR`** (repeatable). `DIR` may be a prefix or a
+  folder of prefixes. Plain Wine unless the path names a launcher.
+- **Folders directly inside your home directory**: `~/.wine`, `~/.insomniac`,
+  and so on. Plain Wine.
+- **Each launcher's own folder**: `~/Faugus`, `~/PortProton`,
+  `~/.PlayOnLinux/wineprefix`, `~/Games` (Lutris), and WineZGUI's and Bottles'
+  folders under `~/.var/app`.
+- **Everywhere else in your home directory**, hidden folders included. A path
+  that names a launcher belongs to it; anything else is listed as `other`.
+- **Every local disk** (`/media`, `/mnt`, `/run/media`, …), searched the same
+  way.
 
-A directory counts as a prefix only if it has a `drive_c` folder and a
-`system.reg` or `user.reg` registry hive. When two sources name the same
-directory it is listed once, as plain Wine: a Lutris game that points at
-`~/.wine` does not turn it into a Lutris prefix.
+The search stops at each prefix and skips folders that cannot hold one worth
+listing: templates and runtimes (`default_pfx`, Bottles' `templates`,
+`runners`, `compatibilitytools.d`), Steam's per-game prefixes (`compatdata`,
+`steamapps`), caches and build output, trash, Windows system folders, and any
+folder with `backup` in its name. It never follows symlinks, goes at most
+eight levels deep, and never searches network mounts such as NFS.
 
-The owner column matters because entries must launch an app through the tool
-that manages its prefix; running a different Wine against a launcher's prefix
-can upgrade or corrupt it.
-
-Not looked for inside your home directory: Bottles, WineZGUI, PlayOnLinux and
-Steam Proton `compatdata`. Name them with `--prefix` if you want them listed.
-The disk search will also report copies of old home directories (for example
-a `.wine` inside a backup of a project tree) if they are not named like a
-backup, so check the list before trusting it.
+Old copies of home directories (for example a `.wine` inside a backup of a
+project tree) are listed as `other` unless their folder is named like a
+backup. They are never touched.
 
 ## Global options
 

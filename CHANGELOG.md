@@ -28,14 +28,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the freshly built binary, via the new `install-completions` target, with
   `FISHCOMPDIR`, `BASHCOMPDIR`, and `ZSHCOMPDIR` overrides. `make uninstall`
   removes them.
-- **`wine prefixes`** lists Wine prefixes and the tool that manages each:
-  top-level hidden folders of the home directory, `$WINEPREFIX`, `--prefix`
-  locations, the prefixes Faugus, PortProton, Lutris and Heroic declare, and
-  a bounded `drive_c` search of every local disk (network mounts are never
-  searched; caches, Steam libraries, trash, Windows system folders and
-  backups are skipped). Read-only. This is the first step toward finding
-  Windows applications that have no menu entry; it does not create entries
-  yet.
+- **`wine prefixes`** lists every Wine prefix and the tool that manages it. A
+  directory is a prefix if it has a `drive_c` folder; no registry hive is
+  required. They are searched for in `$WINEPREFIX` and `--prefix` locations,
+  directly inside the home directory, each launcher's folder (Faugus,
+  PortProton, PlayOnLinux, Lutris, WineZGUI, Bottles), the rest of the home
+  directory including hidden folders, and every local disk. Templates,
+  runtimes, Steam's per-game prefixes, caches, trash and backups are skipped;
+  network mounts are never searched.
+- **`wine scan`** and **`wine install`** find the Windows apps you installed
+  in those prefixes and create a menu entry for each one that has none, each
+  started the way its own launcher starts things: Wine (`start.exe /Unix`),
+  PortProton, Faugus (default prefix only), Lutris (by game slug), Bottles
+  (`bottles-cli run`) and WineZGUI (its own `.desktop` file, copied).
+  Windows and Wine components, uninstallers, documentation, web links and
+  anything that is not a program are ignored. Entries carry the generated
+  marker, so `remove` deletes them, and running `install` again creates
+  nothing. Heroic is not supported.
+- A reader for Windows `.lnk` shortcuts, which supplies the program PortProton
+  and Faugus have to be handed.
 
 ### Changed
 - **Renamed from `kappfinder-rs` to `nexus-menu`**, ahead of joining NexusOS.

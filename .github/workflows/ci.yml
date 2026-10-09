@@ -146,3 +146,9 @@ jobs:
           test "$(grep -c 'sh -c "/usr/bin/nexus-menu ' "$installed")" -eq 4
           test -f /tmp/stage/usr/share/icons/hicolor/scalable/apps/nexus-menu.svg
           echo "launcher valid and correctly rewritten"
+
+      # `wine install` against a throwaway prefix with a stub wine: one valid
+      # entry for the one real app, a no-op the second time, and `remove`
+      # taking it away again.
+      - name: Windows apps end to end
+        run: bash scripts/test-wine-apps.sh ./target/release/nexus-menu

@@ -8,11 +8,16 @@
 
 mod catalog;
 mod desktop;
+mod lnk;
 mod prefixes;
 mod registry;
 mod scanner;
 mod select;
+#[cfg(test)]
+mod testutil;
+mod winapps;
 
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io;
@@ -133,9 +138,25 @@ enum Cmd {
 
 #[derive(Subcommand, Debug)]
 enum WineCmd {
-    /// List Wine prefixes: top-level hidden folders in your home directory,
-    /// plus those Faugus, PortProton, Lutris and Heroic declare
+    /// List every Wine prefix: in your home directory (hidden folders
+    /// included), in each launcher's folder, and on every local disk
     Prefixes,
+
+    /// Report user-installed Windows apps in Wine prefixes that have no menu entry
+    Scan,
+
+    /// Create menu entries for those apps
+    Install {
+        /// Accept every candidate without prompting
+        #[arg(short, long)]
+        yes: bool,
+        /// Show what would be written, then stop
+        #[arg(short = 'n', long)]
+        dry_run: bool,
+        /// Overwrite existing files in the target directory
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 /// A catalogued application that is installed but has no menu entry.
@@ -219,11 +240,26 @@ fn run(cli: Cli) -> Result<()> {
         Cmd::Completions { shell } => cmd_completions(shell),
         Cmd::Wine { prefixes, action } => match action {
             WineCmd::Prefixes => cmd_wine_prefixes(&prefixes),
+            WineCmd::Scan => cmd_wine_scan(&target_dir, cli.ignore_nodisplay, &prefixes),
+            WineCmd::Install {
+                yes,
+                dry_run,
+                force,
+            } => cmd_wine_install(
+                &target_dir,
+                cli.ignore_nodisplay,
+                &prefixes,
+                yes,
+                dry_run,
+                force,
+            ),
         },
     }
 }
 
-fn cmd_wine_prefixes(extra: &[PathBuf]) -> Result<()> {
+/// Every Wine prefix the tool can see: the home directory, `$WINEPREFIX`,
+/// `--prefix`, what each launcher declares, and the local disks.
+fn discover_prefixes(extra: &[PathBuf]) -> Vec<prefixes::Prefix> {
     for path in extra {
         if !path.exists() {
             eprintln!("warning: --prefix {} does not exist", path.display());
@@ -235,15 +271,206 @@ fn cmd_wine_prefixes(extra: &[PathBuf]) -> Result<()> {
         .map(PathBuf::from)
         .filter(|p| p.is_absolute());
     let drives = prefixes::drive_roots(&home);
-    let found = prefixes::discover(&home, env_prefix.as_deref(), extra, &drives);
+    prefixes::discover(&home, env_prefix.as_deref(), extra, &drives)
+}
+
+fn cmd_wine_prefixes(extra: &[PathBuf]) -> Result<()> {
+    let found = discover_prefixes(extra);
 
     let n = found.len();
     println!("{n} Wine prefix{} found\n", if n == 1 { "" } else { "es" });
     for prefix in &found {
-        println!("  {:<10}  {}", prefix.owner.as_str(), prefix.path.display());
+        println!("  {:<11}  {}", prefix.owner.as_str(), prefix.path.display());
     }
     if n == 0 {
         println!("Nothing found. Name a location with `--prefix DIR` if yours is elsewhere.");
+    }
+    Ok(())
+}
+
+/// What a scan of the Windows apps in your prefixes turned up.
+struct WineScan {
+    tools: winapps::Tools,
+    /// Prefixes searched.
+    prefixes: usize,
+    /// Prefixes nothing can safely be launched from.
+    unhandled: Vec<prefixes::Prefix>,
+    /// User-installed apps found.
+    found: usize,
+    /// Of those, how many an existing entry already launches.
+    covered: usize,
+    /// Apps whose launcher is not installed, so no entry can start them.
+    no_launcher: Vec<winapps::WinApp>,
+    /// The rest: installed, launchable, and unreachable from the menu.
+    candidates: Vec<winapps::WinApp>,
+}
+
+fn scan_wine(target_dir: &Path, ignore_nodisplay: bool, extra: &[PathBuf]) -> WineScan {
+    let registry = Registry::build(Some(target_dir), ignore_nodisplay);
+    let tools = winapps::Tools::detect(&prefixes::home());
+    let all = discover_prefixes(extra);
+    let found = winapps::collect(&all, &tools);
+
+    let total = found.apps.len();
+    let mut covered = 0usize;
+    let mut no_launcher = Vec::new();
+    let mut candidates = Vec::new();
+    for app in found.apps {
+        if winapps::covered(&app, &registry) {
+            covered += 1;
+        } else if !winapps::launchable(&app, &tools) {
+            no_launcher.push(app);
+        } else {
+            candidates.push(app);
+        }
+    }
+    candidates.sort_by_key(|a| (a.owner, a.name.to_lowercase()));
+
+    WineScan {
+        tools,
+        prefixes: all.len(),
+        unhandled: found.unhandled,
+        found: total,
+        covered,
+        no_launcher,
+        candidates,
+    }
+}
+
+/// `path` with the home directory shown as `~`.
+fn tilde(path: &Path) -> String {
+    match path.strip_prefix(prefixes::home()) {
+        Ok(rest) if rest.as_os_str().is_empty() => "~".to_string(),
+        Ok(rest) => format!("~/{}", rest.display()),
+        Err(_) => path.display().to_string(),
+    }
+}
+
+fn print_windows_apps(apps: &[winapps::WinApp]) {
+    let width = apps
+        .iter()
+        .map(|a| a.name.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(4);
+    for (i, app) in apps.iter().enumerate() {
+        println!(
+            "  {:>3}  {:<width$}  {:<11}  {}",
+            i + 1,
+            app.name,
+            app.owner.as_str(),
+            tilde(&app.prefix),
+            width = width
+        );
+    }
+}
+
+fn cmd_wine_scan(target_dir: &Path, ignore_nodisplay: bool, extra: &[PathBuf]) -> Result<()> {
+    let scan = scan_wine(target_dir, ignore_nodisplay, extra);
+
+    println!("nexus-menu — Windows applications in Wine prefixes\n");
+    println!("  prefixes searched     {}", scan.prefixes);
+    println!("  apps found            {}", scan.found);
+    println!("  already in the menu   {}", scan.covered);
+    println!("  missing an entry      {}", scan.candidates.len());
+    if !scan.no_launcher.is_empty() {
+        println!("  launcher not installed {}", scan.no_launcher.len());
+    }
+
+    if !scan.unhandled.is_empty() {
+        let mut by_owner: BTreeMap<prefixes::Owner, usize> = BTreeMap::new();
+        for prefix in &scan.unhandled {
+            *by_owner.entry(prefix.owner).or_default() += 1;
+        }
+        let summary: Vec<String> = by_owner
+            .iter()
+            .map(|(owner, n)| format!("{} {n}", owner.as_str()))
+            .collect();
+        println!(
+            "\nLeft alone (nothing can safely start apps in these prefixes): {}",
+            summary.join(", ")
+        );
+    }
+
+    if scan.candidates.is_empty() {
+        if scan.found == 0 {
+            println!("\nNo user-installed Windows apps were found in your Wine prefixes.");
+        } else {
+            println!("\nEvery Windows app in your Wine prefixes already has a menu entry.");
+        }
+        return Ok(());
+    }
+
+    println!("\nInstalled but missing a menu entry:\n");
+    print_windows_apps(&scan.candidates);
+    println!("\nRun `nexus-menu wine install` to create these entries.");
+    Ok(())
+}
+
+fn cmd_wine_install(
+    target_dir: &Path,
+    ignore_nodisplay: bool,
+    extra: &[PathBuf],
+    yes: bool,
+    dry_run: bool,
+    force: bool,
+) -> Result<()> {
+    let scan = scan_wine(target_dir, ignore_nodisplay, extra);
+
+    if scan.candidates.is_empty() {
+        println!(
+            "Nothing to do: every Windows app in your Wine prefixes already has a menu entry."
+        );
+        return Ok(());
+    }
+    println!("Windows apps missing a menu entry:\n");
+    print_windows_apps(&scan.candidates);
+    println!("\nEntries will be written to {}", target_dir.display());
+
+    let chosen: Vec<usize> = if yes || dry_run {
+        (0..scan.candidates.len()).collect()
+    } else {
+        select::prompt_selection(scan.candidates.len())?
+    };
+    if chosen.is_empty() {
+        println!("Nothing selected.");
+        return Ok(());
+    }
+
+    let mut created = 0usize;
+    let mut skipped = 0usize;
+    println!();
+    for idx in chosen {
+        let app = &scan.candidates[idx];
+        let contents = winapps::render(app, &scan.tools)
+            .with_context(|| format!("cannot build an entry for {}", app.name))?;
+        let outcome = write_file(
+            target_dir,
+            &winapps::filename(app),
+            &contents,
+            force,
+            dry_run,
+        )?;
+        match outcome {
+            Outcome::Created(path) => {
+                println!("  created  {}", path.display());
+                created += 1;
+            }
+            Outcome::Would(path) => println!("  would create  {}", path.display()),
+            Outcome::Exists(path) => {
+                println!("  exists, skipped  {} (use --force)", path.display());
+                skipped += 1;
+            }
+        }
+    }
+
+    if dry_run {
+        println!("\nDry run: nothing was written.");
+        return Ok(());
+    }
+    println!("\n{created} created, {skipped} skipped.");
+    if created > 0 {
+        refresh_desktop_database(target_dir);
     }
     Ok(())
 }
@@ -614,6 +841,24 @@ fn write_entry(
     dry_run: bool,
 ) -> Result<Outcome> {
     let filename = format!("{}.desktop", sanitize_stem(&template.bin));
+    write_file(
+        dir,
+        &filename,
+        &desktop::render(template, bin_path),
+        force,
+        dry_run,
+    )
+}
+
+/// Write one `.desktop` file. Never overwrites unless `force`, and never
+/// leaves a partial file behind.
+fn write_file(
+    dir: &Path,
+    filename: &str,
+    contents: &str,
+    force: bool,
+    dry_run: bool,
+) -> Result<Outcome> {
     let path = dir.join(filename);
 
     if path.exists() && !force {
@@ -625,8 +870,6 @@ fn write_entry(
 
     fs::create_dir_all(dir)
         .with_context(|| format!("creating target directory {}", dir.display()))?;
-
-    let contents = desktop::render(template, bin_path);
 
     // Write to a temporary file in the same directory, then rename, so a
     // crash can never leave a half-written entry in the menu.
