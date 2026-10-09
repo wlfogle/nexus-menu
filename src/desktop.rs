@@ -4,7 +4,7 @@
 //! are deliberately ignored: this tool only needs the C-locale values.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::catalog::AppTemplate;
 
@@ -275,13 +275,69 @@ pub fn basename(s: &str) -> String {
     s.rsplit('/').next().unwrap_or(s).to_string()
 }
 
+/// Remove shell-style backslash escapes: `\ ` is a space, `\'` a quote.
+pub fn shell_unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(next) = chars.next() {
+                out.push(next);
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+fn is_windows_file(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    lower.ends_with(".exe") || lower.ends_with(".lnk")
+}
+
+/// The Windows programs and shortcuts an `Exec` value refers to, as absolute
+/// paths.
+///
+/// Wine's own menu builder launches a shortcut as `… start.exe /Unix <path>`,
+/// with the path shell-escaped but not quoted, so it runs to the end of the
+/// line. Launchers such as PortProton and Faugus pass the executable as an
+/// ordinary argument. Collecting both lets the registry tell whether a Windows
+/// app already has a menu entry, whichever tool made it.
+pub fn referenced_paths(exec: &str) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+
+    if let Some(at) = exec.find("/Unix ") {
+        let tail = exec[at + "/Unix ".len()..].trim();
+        let tail = tail
+            .strip_prefix('"')
+            .and_then(|t| t.strip_suffix('"'))
+            .unwrap_or(tail);
+        let path = shell_unescape(tail);
+        if path.starts_with('/') {
+            found.push(PathBuf::from(path));
+        }
+    }
+
+    for token in tokenize_exec(exec) {
+        if token.starts_with('/') && is_windows_file(&token) {
+            let path = PathBuf::from(token);
+            // A quoted `/Unix` path was already found above.
+            if !found.contains(&path) {
+                found.push(path);
+            }
+        }
+    }
+    found
+}
+
 /// Quote a single argument for use inside an `Exec` value.
 ///
 /// Literal `%` must be doubled, and reserved characters force double quoting
 /// with backslash escapes. The result is then run through [`escape_value`]
 /// when written, which doubles those backslashes again — exactly what the
 /// spec requires.
-fn exec_quote(arg: &str) -> String {
+pub(crate) fn exec_quote(arg: &str) -> String {
     let pct = arg.replace('%', "%%");
     let reserved = " \t\n\"'\\<>~|&;$*?#()`";
     let needs_quotes = pct.is_empty() || pct.chars().any(|c| reserved.contains(c));
@@ -368,7 +424,7 @@ pub fn render(template: &AppTemplate, bin_path: &Path) -> String {
     out
 }
 
-fn push_kv(out: &mut String, key: &str, value: &str) {
+pub(crate) fn push_kv(out: &mut String, key: &str, value: &str) {
     out.push_str(key);
     out.push('=');
     out.push_str(&escape_value(value));
@@ -483,6 +539,66 @@ mod tests {
         let out = render(&AppTemplate::auto("x"), Path::new("/usr/bin/x"));
         assert!(out.contains("X-NexusMenu-Generated=true"));
         assert!(!out.contains("X-KAppFinder"));
+    }
+
+    #[test]
+    fn wine_menu_entries_reference_the_shortcut_they_launch() {
+        // The Exec value of an entry Wine's own menu builder wrote, after the
+        // unescaping `parse` applies: spaces in the path are still
+        // shell-escaped with a backslash.
+        let exec = r#"env WINEPREFIX="/home/u/.wine" wine-stable C:\\windows\\command\\start.exe /Unix /home/u/.wine/dosdevices/c:/ProgramData/Microsoft/Windows/Start\ Menu/Programs/Horizon\ Forbidden\ West/Uninstall.lnk"#;
+        assert_eq!(
+            referenced_paths(exec),
+            vec![PathBuf::from(
+                "/home/u/.wine/dosdevices/c:/ProgramData/Microsoft/Windows/Start Menu/Programs/Horizon Forbidden West/Uninstall.lnk"
+            )]
+        );
+    }
+
+    #[test]
+    fn wine_menu_entries_may_escape_quotes_and_quote_the_path() {
+        assert_eq!(
+            referenced_paths(r"wine start.exe /Unix /p/Assassin\'s\ Creed.lnk"),
+            vec![PathBuf::from("/p/Assassin's Creed.lnk")]
+        );
+        assert_eq!(
+            referenced_paths(r#"wine start.exe /Unix "/p/My App.lnk""#),
+            vec![PathBuf::from("/p/My App.lnk")]
+        );
+    }
+
+    #[test]
+    fn launcher_entries_reference_the_executable_they_pass() {
+        let portproton = r#"flatpak run ru.linux_gaming.PortProton "/h/.var/app/x/data/prefixes/GOG/drive_c/Program Files (x86)/GOG Galaxy/GalaxyClient.exe""#;
+        assert_eq!(
+            referenced_paths(portproton),
+            vec![PathBuf::from(
+                "/h/.var/app/x/data/prefixes/GOG/drive_c/Program Files (x86)/GOG Galaxy/GalaxyClient.exe"
+            )]
+        );
+
+        let faugus = r#"/usr/bin/flatpak run --command=faugus-launcher io.github.Faugus.faugus-launcher @@ "/h/.wine/drive_c/Games/Darksiders - Genesis/DarksidersGenesis.EXE" @@"#;
+        assert_eq!(
+            referenced_paths(faugus),
+            vec![PathBuf::from(
+                "/h/.wine/drive_c/Games/Darksiders - Genesis/DarksidersGenesis.EXE"
+            )]
+        );
+    }
+
+    #[test]
+    fn native_programs_reference_no_windows_paths() {
+        assert!(referenced_paths("/usr/bin/htop %U").is_empty());
+        assert!(referenced_paths("env LANG=C /usr/bin/gkrellm").is_empty());
+        assert!(referenced_paths("").is_empty());
+    }
+
+    #[test]
+    fn shell_unescape_drops_a_backslash_before_any_character() {
+        assert_eq!(shell_unescape(r"a\ b"), "a b");
+        assert_eq!(shell_unescape(r"it\'s"), "it's");
+        assert_eq!(shell_unescape(r"a\\b"), r"a\b");
+        assert_eq!(shell_unescape("plain"), "plain");
     }
 
     #[test]

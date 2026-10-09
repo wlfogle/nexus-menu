@@ -115,6 +115,16 @@ on the declared minimum, or raise `rust-version` and update every place that
 repeats it in the same change: the README badge and Requirements section,
 CONTRIBUTING, and `.github/release-notes.md`.
 
+The Windows-app commands also have an end-to-end check,
+`scripts/test-wine-apps.sh <binary>`, which CI runs against the release
+build. It builds a fake Wine prefix with a stub `wine` and touches nothing
+outside a temporary directory:
+
+```fish
+cargo build
+bash scripts/test-wine-apps.sh target/debug/nexus-menu
+```
+
 ## Changing the launcher
 
 [`desktop/nexus-menu.desktop`](desktop/nexus-menu.desktop) is
