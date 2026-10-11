@@ -1545,7 +1545,9 @@ Categories=Game;
                 &format!("[Desktop Entry]\nType=Application\nName=X\nExec={exec}\n"),
             );
         }
-        let reg = Registry::build(Some(&s.path().join("applications")), false);
+        // Only the scratch directory: the machine's real menu must not
+        // decide what these tests find covered.
+        let reg = Registry::from_dirs(&[s.path().join("applications")], false);
         (s, reg)
     }
 
@@ -1685,7 +1687,7 @@ Categories=Game;
                 &render(a, &t).expect("renders"),
             );
         }
-        let reg = Registry::build(Some(&s.path().join("applications")), false);
+        let reg = Registry::from_dirs(&[s.path().join("applications")], false);
         for a in &apps {
             assert!(
                 covered(a, &reg),

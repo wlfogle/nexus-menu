@@ -104,8 +104,6 @@ impl Registry {
     /// `Hidden=true` are treated as absent, so the tool will offer to create
     /// a visible replacement for them.
     pub fn build(extra_dir: Option<&Path>, ignore_nodisplay: bool) -> Self {
-        let mut registry = Registry::default();
-
         let mut dirs = application_dirs();
         if let Some(extra) = extra_dir {
             let extra = extra.to_path_buf();
@@ -113,6 +111,16 @@ impl Registry {
                 dirs.insert(0, extra);
             }
         }
+        Registry::from_dirs(&dirs, ignore_nodisplay)
+    }
+
+    /// Index exactly `dirs` and nothing else.
+    ///
+    /// [`Registry::build`] adds the system's own application directories, so
+    /// what it finds depends on the machine it runs on. A test that needs a
+    /// known answer uses this instead.
+    pub fn from_dirs(dirs: &[PathBuf], ignore_nodisplay: bool) -> Self {
+        let mut registry = Registry::default();
 
         for dir in dirs {
             if !dir.is_dir() {
@@ -120,7 +128,7 @@ impl Registry {
             }
             registry.scanned_dirs.push(dir.clone());
 
-            for entry in WalkDir::new(&dir)
+            for entry in WalkDir::new(dir)
                 .follow_links(true)
                 .max_depth(8)
                 .into_iter()
@@ -252,7 +260,7 @@ Exec=env WINEPREFIX="/p/.wine" wine C:\\windows\\command\\start.exe /Unix /p/.wi
             "[Desktop Entry]\nType=Application\nName=Game\nExec=flatpak run some.Launcher \"/g/Prefixes/X/drive_c/Game/game.exe\"\n",
         );
 
-        let reg = Registry::build(Some(&s.path().join("applications")), false);
+        let reg = Registry::from_dirs(&[s.path().join("applications")], false);
         assert!(reg.references(Path::new("/p/.wine/Start Menu/My App.lnk")));
         assert!(reg.references(Path::new("/g/Prefixes/X/drive_c/Game/game.exe")));
         assert!(!reg.references(Path::new("/p/.wine/Other.lnk")));
@@ -265,9 +273,9 @@ Exec=env WINEPREFIX="/p/.wine" wine C:\\windows\\command\\start.exe /Unix /p/.wi
             "applications/hidden.desktop",
             "[Desktop Entry]\nType=Application\nName=H\nNoDisplay=true\nExec=wine start.exe /Unix /p/Hidden.lnk\n",
         );
-        let dir = s.path().join("applications");
-        assert!(Registry::build(Some(&dir), false).references(Path::new("/p/Hidden.lnk")));
-        assert!(!Registry::build(Some(&dir), true).references(Path::new("/p/Hidden.lnk")));
+        let dirs = [s.path().join("applications")];
+        assert!(Registry::from_dirs(&dirs, false).references(Path::new("/p/Hidden.lnk")));
+        assert!(!Registry::from_dirs(&dirs, true).references(Path::new("/p/Hidden.lnk")));
     }
 
     #[test]
@@ -289,8 +297,23 @@ Exec=env WINEPREFIX="/p/.wine" wine C:\\windows\\command\\start.exe /Unix /p/.wi
                 via_link.display()
             ),
         );
-        let reg = Registry::build(Some(&s.path().join("applications")), false);
+        let reg = Registry::from_dirs(&[s.path().join("applications")], false);
         assert!(reg.references(&real));
+    }
+
+    #[test]
+    fn from_dirs_reads_only_the_directories_it_is_given() {
+        let s = Scratch::new();
+        let entry =
+            |exec: &str| format!("[Desktop Entry]\nType=Application\nName=X\nExec={exec}\n");
+        s.file("in/a.desktop", &entry("wine start.exe /Unix /p/In.lnk"));
+        s.file("out/b.desktop", &entry("wine start.exe /Unix /p/Out.lnk"));
+
+        let reg = Registry::from_dirs(&[s.path().join("in"), s.path().join("missing")], false);
+        assert!(reg.references(Path::new("/p/In.lnk")));
+        assert!(!reg.references(Path::new("/p/Out.lnk")));
+        assert_eq!(reg.scanned_dirs, vec![s.path().join("in")]);
+        assert_eq!(reg.total_entries, 1);
     }
 
     #[test]
