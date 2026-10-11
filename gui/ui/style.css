@@ -51,6 +51,7 @@ header {
 }
 
 h1 { margin: 0; font-size: 16px; font-weight: 600; }
+#version { font-size: 12px; margin-left: -8px; }
 
 nav { display: flex; gap: 4px; flex: 1; }
 
@@ -139,6 +140,7 @@ input[type="search"] {
 #banner { background: var(--accent); color: var(--accent-text); }
 #banner button { color: var(--accent-text); background: transparent; border-color: currentColor; }
 #error { background: var(--danger); color: var(--bg); }
+#error button { color: var(--bg); background: transparent; border-color: currentColor; }
 [hidden] { display: none !important; }
 
 #busy {

@@ -11,6 +11,8 @@ fn main() {
             "list_generated",
             "remove",
             "prefixes",
+            "check_update",
+            "install_update",
         ]),
     ))
     .expect("failed to run tauri-build");

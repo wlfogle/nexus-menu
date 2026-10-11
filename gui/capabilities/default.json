@@ -8,6 +8,8 @@
     "allow-install",
     "allow-list-generated",
     "allow-remove",
-    "allow-prefixes"
+    "allow-prefixes",
+    "allow-check-update",
+    "allow-install-update"
   ]
 }

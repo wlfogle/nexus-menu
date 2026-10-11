@@ -17,13 +17,22 @@ Options:
       --prefix <DIR>     Extra Wine prefix, or a directory to search for them
                          (repeatable)
       --ignore-nodisplay Treat NoDisplay/Hidden entries as missing
+      --no-update-check  Do not look for a newer version
   -V, --version          Print the version
   -h, --help             Print this help
 ";
 
+/// Everything the app is started with.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Gui {
+    pub engine: Options,
+    /// Whether to look for a newer version at launch.
+    pub update_check: bool,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Parsed {
-    Run(Options),
+    Run(Gui),
     Version,
     Help,
 }
@@ -31,6 +40,7 @@ pub enum Parsed {
 /// Parse `args` (without the program name).
 pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String> {
     let mut out = Options::default();
+    let mut update_check = true;
 
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -43,13 +53,17 @@ pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String> 
             "-h" | "--help" => return Ok(Parsed::Help),
             "-V" | "--version" => return Ok(Parsed::Version),
             "--ignore-nodisplay" => out.ignore_nodisplay = true,
+            "--no-update-check" => update_check = false,
             "--dir" => out.target_dir = value("--dir")?,
             "--catalog" => out.catalog_path = value("--catalog")?,
             "--prefix" => out.extra_prefixes.push(value("--prefix")?),
             other => return Err(format!("unknown argument `{other}`")),
         }
     }
-    Ok(Parsed::Run(out))
+    Ok(Parsed::Run(Gui {
+        engine: out,
+        update_check,
+    }))
 }
 
 #[cfg(test)]
@@ -60,16 +74,28 @@ mod tests {
         parse(args.iter().map(|s| s.to_string()))
     }
 
-    fn opts(args: &[&str]) -> Options {
+    fn gui(args: &[&str]) -> Gui {
         match run(args).unwrap() {
-            Parsed::Run(o) => o,
+            Parsed::Run(g) => g,
             other => panic!("expected Run, got {other:?}"),
         }
     }
 
+    fn opts(args: &[&str]) -> Options {
+        gui(args).engine
+    }
+
     #[test]
-    fn no_arguments_gives_the_command_line_defaults() {
-        assert_eq!(opts(&[]), Options::default());
+    fn no_arguments_gives_the_command_line_defaults_and_checks_for_updates() {
+        let g = gui(&[]);
+        assert_eq!(g.engine, Options::default());
+        assert!(g.update_check);
+    }
+
+    #[test]
+    fn the_update_check_can_be_switched_off() {
+        assert!(!gui(&["--no-update-check"]).update_check);
+        assert_eq!(opts(&["--no-update-check"]), Options::default());
     }
 
     #[test]

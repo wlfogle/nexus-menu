@@ -13,12 +13,21 @@ publish = false
 [workspace]
 
 [dependencies]
+minisign-verify = "0.3"
 nexus-menu = { path = ".." }
+semver = "1"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tauri = { version = "2", features = [] }
+ureq = "3"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+
+[dev-dependencies]
+# Makes throwaway keys and signatures for the updater's tests, so they need no
+# external tool.
+minisign = "0.10"
 
 [features]
 # Serve the page from the binary instead of a dev server. `cargo tauri build`
@@ -26,6 +35,10 @@ tauri-build = { version = "2", features = [] }
 # window tries to reach a dev URL and shows "connection refused".
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+# Lets the update address and key be replaced from the environment, and allows
+# plain http, so an update can be rehearsed against a server on this machine.
+# Never enabled for a release.
+update-test-hooks = []
 
 [profile.release]
 opt-level = 3

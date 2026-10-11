@@ -343,6 +343,48 @@ async function loadPrefixes() {
       el('span', { class: 'detail', text: p.path, title: p.path }))));
 }
 
+// --- updating ----------------------------------------------------------------
+
+// Asks whether a newer version exists. This runs quietly in the background: if
+// there is no network, or the check fails for any reason, nothing is shown.
+async function checkUpdate() {
+  let view;
+  try {
+    view = await call('check_update');
+  } catch (error) {
+    console.warn('update check failed:', error);
+    return;
+  }
+  $('version').textContent = `v${view.current}`;
+  if (!view.available) return;
+
+  const banner = $('banner');
+  const message = el('span', {
+    text: `Version ${view.available.version} is available (you have ${view.current}).`,
+    title: view.available.notes,
+  });
+  if (view.can_install) {
+    const button = el('button', { type: 'button', text: 'Install and restart' });
+    button.addEventListener('click', installUpdate);
+    replace(banner, message, button);
+  } else {
+    replace(banner, message,
+      el('span', { text: `${view.problem || 'This copy cannot update itself.'} Get it from ${view.releases_url}` }));
+  }
+  banner.hidden = false;
+}
+
+// On success the app starts the new version and quits, so there is nothing to
+// do afterwards.
+async function installUpdate() {
+  clearError();
+  try {
+    await busy('Downloading and verifying the update', () => call('install_update'));
+  } catch (error) {
+    showError(error);
+  }
+}
+
 // --- wiring ------------------------------------------------------------------
 
 function selectVisible(on) {
@@ -371,4 +413,5 @@ document.addEventListener('DOMContentLoaded', () => {
   $('create').addEventListener('click', createSelected);
   $('remove').addEventListener('click', removeSelected);
   loadScan();
+  checkUpdate();
 });
