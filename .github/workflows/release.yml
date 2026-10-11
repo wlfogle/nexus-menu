@@ -128,3 +128,69 @@ jobs:
               "${{ steps.package.outputs.archive }}" \
               "${{ steps.package.outputs.checksum }}"
           fi
+
+  # The desktop app. It is a plain dynamically linked binary that uses the
+  # system's webkit2gtk, so it is built on the oldest Ubuntu LTS that has
+  # webkit2gtk-4.1, which keeps its glibc requirement as low as it can be.
+  #
+  # It is signed, and installed copies check that signature before updating
+  # themselves. scripts/release-gui.sh therefore refuses to produce anything
+  # they would reject: a wrong version, a binary built with the update test
+  # hooks, or a signing key that is not the one compiled into the app.
+  gui:
+    name: Build, sign and publish the desktop app
+    needs: release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # Values from the event and from secrets reach the shell through the
+      # environment, never spliced into the script text.
+      - name: Check the signing key is configured
+        env:
+          KEY: ${{ secrets.NEXUS_MENU_SIGNING_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::the NEXUS_MENU_SIGNING_KEY secret is not set; see CONTRIBUTING.md, \"Releasing the desktop app\""
+            exit 1
+          fi
+
+      - name: Install the system packages Tauri needs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Test
+        working-directory: gui
+        run: cargo test --locked
+
+      - name: Build
+        working-directory: gui
+        run: cargo build --release --locked
+
+      - name: Install rsign
+        run: cargo install rsign2 --locked --version 0.6.7
+
+      - name: Sign and stage
+        env:
+          KEY: ${{ secrets.NEXUS_MENU_SIGNING_KEY }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          umask 077
+          keyfile=$(mktemp)
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s\n' "$KEY" > "$keyfile"
+          NEXUS_MENU_SIGNING_KEY_FILE="$keyfile" bash scripts/release-gui.sh "$TAG" dist-gui
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: gh release upload "$TAG" dist-gui/* --clobber

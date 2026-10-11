@@ -147,8 +147,89 @@ jobs:
           test -f /tmp/stage/usr/share/icons/hicolor/scalable/apps/nexus-menu.svg
           echo "launcher valid and correctly rewritten"
 
+      # The desktop app's launcher gets the same scrutiny. It needs no build:
+      # `install-gui-launcher` only rewrites and copies files.
+      - name: Validate the desktop app's launcher
+        run: |
+          set -euo pipefail
+          make install-gui-launcher DESTDIR=/tmp/stagegui PREFIX=/usr
+          installed=/tmp/stagegui/usr/share/applications/nexus-menu-gui.desktop
+          output=$(desktop-file-validate desktop/nexus-menu-gui.desktop "$installed" 2>&1 || true)
+          if [ -n "$output" ]; then
+            echo "desktop-file-validate reported problems:"
+            echo "$output"
+            exit 1
+          fi
+          grep -q '^Exec=/usr/bin/nexus-menu-gui$' "$installed"
+          grep -q '^TryExec=/usr/bin/nexus-menu-gui$' "$installed"
+          test -f /tmp/stagegui/usr/share/icons/hicolor/scalable/apps/nexus-menu.svg
+          echo "desktop app launcher valid and correctly rewritten"
+
       # `wine install` against a throwaway prefix with a stub wine: one valid
       # entry for the one real app, a no-op the second time, and `remove`
       # taking it away again.
       - name: Windows apps end to end
         run: bash scripts/test-wine-apps.sh ./target/release/nexus-menu
+
+  # The desktop app is a Cargo workspace of its own, so none of the jobs above
+  # build it. It needs webkit2gtk's development packages, hence a job of its
+  # own, on the same Ubuntu release the release job builds on.
+  gui:
+    name: desktop app / fmt / clippy / test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # The point of the separate workspace: Tauri's dependency tree must not
+      # leak into the lockfile that the static release and the msrv job build
+      # from.
+      - name: Root lockfile has no Tauri
+        run: |
+          if grep -q '^name = "tauri' Cargo.lock; then
+            echo "::error::Tauri crates are in the root Cargo.lock; the desktop app must stay in its own workspace"
+            exit 1
+          fi
+
+      - name: Install the system packages Tauri needs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            gui/target
+          key: ${{ runner.os }}-gui-cargo-${{ hashFiles('gui/Cargo.lock') }}
+
+      - name: Formatting
+        working-directory: gui
+        run: cargo fmt --check
+
+      - name: Clippy
+        working-directory: gui
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      # The feature that lets an update be rehearsed against a local server
+      # must keep compiling, even though no release ever enables it.
+      - name: Clippy with the update test hooks
+        working-directory: gui
+        run: cargo clippy --all-targets --locked --features update-test-hooks -- -D warnings
+
+      - name: Tests
+        working-directory: gui
+        run: cargo test --locked
+
+      # The release signs with rsign; the manifest script is tested with the
+      # same tool, so the two cannot drift apart unnoticed.
+      - name: Install rsign
+        run: cargo install rsign2 --locked --version 0.6.7
+
+      - name: Release manifest script
+        run: bash scripts/test-latest-json.sh

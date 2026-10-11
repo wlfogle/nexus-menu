@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "nexus-menu",
-  "version": "0.1.0",
   "identifier": "dev.wlfogle.nexus-menu",
   "build": {
     "frontendDist": "./ui"
