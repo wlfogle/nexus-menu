@@ -249,7 +249,7 @@ pub fn owned_generated(target_dir: &Path) -> Vec<PathBuf> {
 // ---------------------------------------------------------------------------
 
 /// Where to look and where to write.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
     /// Directory new entries are written to.
     pub target_dir: PathBuf,
