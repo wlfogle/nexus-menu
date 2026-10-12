@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The terminal launcher has a fourth right-click action, **Create entries for
+  Windows apps**, which runs `nexus-menu wine install`. Its default action,
+  `install`, covers programs on your `PATH` only, so until now Windows apps
+  could only be reached from the desktop app or the command line.
+
+### Changed
+- The command-line half of the release workflow is pinned to `ubuntu-22.04`
+  instead of `ubuntu-latest`, which GitHub is moving to a newer Ubuntu. The
+  desktop app's job was already pinned. The binary is statically linked
+  against musl, so the host does not change what ships.
+
+### Verification
+- The 0.2.0 release was checked after publishing. Its desktop app job ran for
+  the first time and passed. An app built from the previous version, with the
+  production update address and key compiled in, fetched `latest.json` from
+  GitHub Releases over https, downloaded and verified 0.2.0, replaced itself
+  (the installed file was byte-identical to the published binary) and
+  restarted with the same arguments. The published binary's signature also
+  verified with an independent tool.
+
 ## [0.2.0] - 2026-10-12
 
 The first release under the name nexus-menu. It adds Windows apps in Wine

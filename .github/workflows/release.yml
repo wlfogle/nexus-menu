@@ -20,7 +20,11 @@ env:
 jobs:
   release:
     name: Build and publish
-    runs-on: ubuntu-latest
+    # Pinned, like the desktop app's job below, because `ubuntu-latest` is about
+    # to move to a newer Ubuntu and a release should not depend on what the
+    # label happens to mean that week. The binary is statically linked against
+    # musl, so the host release does not change what ships.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
         with:

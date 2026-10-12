@@ -143,7 +143,7 @@ jobs:
           # The rewrite is a sed over a file that is free to change; prove it
           # still produced absolute paths rather than silently matching nothing.
           grep -q '^TryExec=/usr/bin/nexus-menu$' "$installed"
-          test "$(grep -c 'sh -c "/usr/bin/nexus-menu ' "$installed")" -eq 4
+          test "$(grep -c 'sh -c "/usr/bin/nexus-menu ' "$installed")" -eq 5
           test -f /tmp/stage/usr/share/icons/hicolor/scalable/apps/nexus-menu.svg
           echo "launcher valid and correctly rewritten"
 
