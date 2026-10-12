@@ -9,10 +9,16 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Every job runs on ubuntu-22.04 rather than `ubuntu-latest`, which GitHub moves
+# to a newer Ubuntu from time to time. The `validate` job in particular runs
+# desktop-file-validate, whose strictness differs between Ubuntu releases, so
+# which version it is has to be a decision, not whatever the label means this
+# week. The release workflow is pinned to the same release, so CI tests what is
+# shipped.
 jobs:
   check:
     name: fmt / clippy / test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +50,7 @@ jobs:
   # this job enforces, and a dependency bump that outgrows it fails here.
   msrv:
     name: builds on the declared minimum Rust version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -70,7 +76,7 @@ jobs:
 
   validate:
     name: generated entries pass desktop-file-validate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 

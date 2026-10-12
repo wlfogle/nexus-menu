@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of `ubuntu-latest`, which GitHub is moving to a newer Ubuntu. The
   desktop app's job was already pinned. The binary is statically linked
   against musl, so the host does not change what ships.
+- The CI jobs (`check`, `msrv`, `validate`) are pinned to `ubuntu-22.04` too,
+  so CI tests on the same release that ships. `validate` runs
+  `desktop-file-validate`, whose strictness can differ between Ubuntu
+  releases.
 
 ### Verification
 - The 0.2.0 release was checked after publishing. Its desktop app job ran for
