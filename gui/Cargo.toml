@@ -1,6 +1,6 @@
 [package]
 name = "nexus-menu-gui"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Desktop app for nexus-menu: find installed applications with no menu entry and create one"
 license = "GPL-3.0-or-later"

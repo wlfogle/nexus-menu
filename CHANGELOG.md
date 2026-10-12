@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-12
+
+A small release after 0.2.0: a launcher action for Windows apps, and CI and
+the release workflow pinned to Ubuntu 22.04. The command-line and desktop app
+code is unchanged since 0.2.0. It is also the first release an installed copy
+of the desktop app can update itself to.
+
 ### Added
 - The terminal launcher has a fourth right-click action, **Create entries for
   Windows apps**, which runs `nexus-menu wine install`. Its default action,
@@ -286,6 +293,7 @@ entries only for the ones missing.
   the program `flatpak` rather than the application, so a Flatpak install
   does not suppress an entry for a native binary of the same name.
 
-[Unreleased]: https://github.com/wlfogle/nexus-menu/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/wlfogle/nexus-menu/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/wlfogle/nexus-menu/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/wlfogle/nexus-menu/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/wlfogle/nexus-menu/releases/tag/v0.1.0
