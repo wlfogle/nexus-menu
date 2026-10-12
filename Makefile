@@ -5,7 +5,13 @@
 #   make install PREFIX=$HOME/.local  install for the current user only
 #   make install-launcher             launcher + icon only, no build
 #   make install-completions          fish/bash/zsh completions only
+#   make install-gui                  the desktop app (needs Tauri's build packages)
+#   make check-gui                    fmt + clippy + tests for the desktop app
 #   make uninstall                    remove everything this installed
+#
+# The desktop app is built and installed separately from the command line on
+# purpose: it needs webkit2gtk's development packages, which nobody installing
+# the command line should have to have. `make install` never builds it.
 #
 # Completion directories are overridable (FISHCOMPDIR, BASHCOMPDIR,
 # ZSHCOMPDIR). The defaults are the system-wide vendor locations, which a
@@ -29,11 +35,13 @@ FISHCOMPDIR ?= $(DATADIR)/fish/vendor_completions.d
 BASHCOMPDIR ?= $(DATADIR)/bash-completion/completions
 ZSHCOMPDIR  ?= $(DATADIR)/zsh/site-functions
 
-CARGO ?= cargo
-BIN   := target/release/nexus-menu
+CARGO  ?= cargo
+BIN    := target/release/nexus-menu
+GUIBIN := gui/target/release/nexus-menu-gui
 
 .PHONY: all build check validate install install-bin install-launcher \
-        install-completions uninstall clean
+        install-completions build-gui check-gui install-gui \
+        install-gui-launcher uninstall clean
 
 all: build
 
@@ -48,13 +56,13 @@ check:
 # desktop-file-validate exits 0 for warnings and hints, so treat any output
 # at all as a failure — the same bar CI holds generated entries to.
 validate:
-	@out=$$(desktop-file-validate desktop/nexus-menu.desktop 2>&1 || true); \
+	@out=$$(desktop-file-validate desktop/nexus-menu.desktop desktop/nexus-menu-gui.desktop 2>&1 || true); \
 	if [ -n "$$out" ]; then \
 	  echo "desktop-file-validate reported problems:"; \
 	  echo "$$out"; \
 	  exit 1; \
 	fi; \
-	echo "desktop/nexus-menu.desktop is valid"
+	echo "desktop/nexus-menu.desktop and desktop/nexus-menu-gui.desktop are valid"
 
 install: install-bin install-launcher install-completions
 
@@ -88,12 +96,42 @@ install-completions: build
 	          $(DESTDIR)$(BASHCOMPDIR)/nexus-menu \
 	          $(DESTDIR)$(ZSHCOMPDIR)/_nexus-menu
 
+# The desktop app lives in its own Cargo workspace (see gui/Cargo.toml), so it
+# is built from inside gui/ and has its own lockfile and target directory.
+build-gui:
+	cd gui && $(CARGO) build --release --locked
+
+check-gui:
+	cd gui && $(CARGO) fmt --check
+	cd gui && $(CARGO) clippy --all-targets --locked -- -D warnings
+	cd gui && $(CARGO) test --locked
+
+install-gui: build-gui install-gui-launcher
+	install -Dm755 $(GUIBIN) $(DESTDIR)$(BINDIR)/nexus-menu-gui
+
+# Same reasoning as install-launcher: the session's $PATH is not the shell's,
+# so the installed launcher is pointed at the absolute path. The icon is shared
+# with the terminal launcher.
+install-gui-launcher:
+	install -d $(DESTDIR)$(APPDIR)
+	sed -e 's|^Exec=nexus-menu-gui$$|Exec=$(BINDIR)/nexus-menu-gui|' \
+	    -e 's|^TryExec=nexus-menu-gui$$|TryExec=$(BINDIR)/nexus-menu-gui|' \
+	    desktop/nexus-menu-gui.desktop > $(DESTDIR)$(APPDIR)/nexus-menu-gui.desktop
+	chmod 644 $(DESTDIR)$(APPDIR)/nexus-menu-gui.desktop
+	install -Dm644 desktop/nexus-menu.svg $(DESTDIR)$(ICONDIR)/nexus-menu.svg
+	@if [ -z "$(DESTDIR)" ]; then \
+	  update-desktop-database "$(APPDIR)" 2>/dev/null || true; \
+	  gtk-update-icon-cache -qtf "$(DATADIR)/icons/hicolor" 2>/dev/null || true; \
+	fi
+
 # Menu entries the tool generated are *not* removed here: they belong to the
 # user, not to this install. Run `nexus-menu remove` first if you want
 # them gone, because only the binary knows which files are its own.
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/nexus-menu
+	rm -f $(DESTDIR)$(BINDIR)/nexus-menu-gui
 	rm -f $(DESTDIR)$(APPDIR)/nexus-menu.desktop
+	rm -f $(DESTDIR)$(APPDIR)/nexus-menu-gui.desktop
 	rm -f $(DESTDIR)$(ICONDIR)/nexus-menu.svg
 	rm -f $(DESTDIR)$(FISHCOMPDIR)/nexus-menu.fish
 	rm -f $(DESTDIR)$(BASHCOMPDIR)/nexus-menu
@@ -105,3 +143,4 @@ uninstall:
 
 clean:
 	$(CARGO) clean
+	cd gui && $(CARGO) clean

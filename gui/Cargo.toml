@@ -1,0 +1,47 @@
+[package]
+name = "nexus-menu-gui"
+version = "0.1.0"
+edition = "2021"
+description = "Desktop app for nexus-menu: find installed applications with no menu entry and create one"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/wlfogle/nexus-menu"
+publish = false
+
+# A workspace of its own. Tauri brings several hundred dependencies, and they
+# must not enter the root Cargo.lock: the command line's static musl release,
+# its minimum-Rust-version job and `make check` all build from that lockfile.
+[workspace]
+
+[dependencies]
+minisign-verify = "0.3"
+nexus-menu = { path = ".." }
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+ureq = "3"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dev-dependencies]
+# Makes throwaway keys and signatures for the updater's tests, so they need no
+# external tool.
+minisign = "0.10"
+
+[features]
+# Serve the page from the binary instead of a dev server. `cargo tauri build`
+# turns this on by itself; a plain `cargo build` does not, and without it the
+# window tries to reach a dev URL and shows "connection refused".
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+# Lets the update address and key be replaced from the environment, and allows
+# plain http, so an update can be rehearsed against a server on this machine.
+# Never enabled for a release.
+update-test-hooks = []
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

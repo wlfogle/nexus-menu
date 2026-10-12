@@ -28,6 +28,21 @@ sha256sum -c nexus-menu-*.tar.gz.sha256
 
 Or build from source with `cargo build --release` (Rust 1.85+).
 
+## Desktop app
+
+The window version is a separate, smaller download:
+`nexus-menu-gui-<version>-x86_64-linux`, with its `.minisig` signature beside
+it. It needs `libwebkit2gtk-4.1-0` and glibc 2.35 or newer.
+
+```sh
+install -Dm755 nexus-menu-gui-*-x86_64-linux ~/.local/bin/nexus-menu-gui
+```
+
+It updates itself: a banner offers **Install and restart** when a newer signed
+release exists, and nothing is installed without that click. The signing key
+(ID `72B341C1C33CBF82`) is compiled into the app, and the signature covers the
+version number as well as the file. See the README's "Desktop app" section.
+
 ## Quick start
 
 ```sh

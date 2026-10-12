@@ -13,7 +13,7 @@
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Menu Entry Finder
+Name=Menu Entry Finder (Terminal)
 GenericName=Desktop Entry Generator
 Comment=Find installed applications with no menu entry and create one
 Exec=sh -c "nexus-menu install; echo; echo 'Press Enter to close this window.'; read done"

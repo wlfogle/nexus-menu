@@ -1,0 +1,22 @@
+# Launcher for the nexus-menu desktop app.
+#
+# This file is hand-written and carries no X-NexusMenu-Generated marker, so
+# `nexus-menu remove` will never delete it.
+#
+# Exec calls the binary by name, which requires it to be on the $PATH of the
+# desktop session. `make install-gui` rewrites Exec and TryExec to the absolute
+# path the binary was installed to, which removes that requirement.
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Menu Entry Finder
+GenericName=Desktop Entry Generator
+Comment=Find installed applications with no menu entry and create one
+Exec=nexus-menu-gui
+TryExec=nexus-menu-gui
+Icon=nexus-menu
+Terminal=false
+Categories=Settings;DesktopSettings;
+Keywords=application;menu;launcher;desktop entry;freedesktop;xdg;kappfinder;missing;
+StartupNotify=true
+StartupWMClass=nexus-menu-gui

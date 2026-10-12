@@ -47,8 +47,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing. Heroic is not supported.
 - A reader for Windows `.lnk` shortcuts, which supplies the program PortProton
   and Faugus have to be handed.
+- **Desktop app, `nexus-menu-gui`.** A Tauri window for the same job as the
+  command line: a **Missing** tab (filter, tick, create; dry run and
+  overwrite switches), a **Created** tab that lists and removes what
+  nexus-menu made (two clicks to delete), and a **Prefixes** tab. It runs the
+  same code as the command line, so an entry made in the window is
+  byte-identical to the one `wine install` writes. It is a separate Cargo
+  workspace under `gui/`, so Tauri's dependencies stay out of the command
+  line's lockfile. The page is plain HTML, CSS and JavaScript, with no Node
+  and no bundler, and never sends a path: a scan hands out ids and the
+  engine looks each one up. No Tauri plugins; the window may call only the
+  app's own seven commands; a strict content security policy.
+  `--dir`, `--catalog`, `--prefix`, `--ignore-nodisplay` and
+  `--no-update-check` are accepted.
+- **The desktop app updates itself.** A background check on launch; if the
+  latest release is newer, a banner offers **Install and restart**, and
+  nothing is installed without the click. Releases are signed with Minisign
+  (key ID `72B341C1C33CBF82`), and the signature covers the version, so an
+  old but genuinely signed build cannot be passed off as a new one. Only
+  https, at most 128 MiB, must be an executable, and the new file is renamed
+  over the old one, so a failure leaves the installed binary untouched.
+  Tauri's own updater was not used: on Linux it can only replace an AppImage
+  (79 MB for a similar app here, against about 8 MB for the plain binary).
+- **`make install-gui`**, **`install-gui-launcher`**, **`build-gui`** and
+  **`check-gui`**, and a launcher for the app, `desktop/nexus-menu-gui.desktop`.
+  `make install` still builds only the command line, which needs no GUI
+  packages.
+- **Release tooling for the app.** `scripts/release-gui.sh` turns a built
+  binary into the three files a release publishes (binary, `.minisig`,
+  `latest.json`) and refuses to produce anything installed copies would
+  reject: a version that disagrees with the tag, a binary built with the
+  update test hooks, or a signing key that is not the one compiled into the
+  app. `scripts/make-latest-json.sh` writes the manifest and
+  `scripts/test-latest-json.sh` tests it. The release workflow has a new job
+  that builds, signs and publishes the app.
+- The library now exposes `engine`, which returns data instead of printing,
+  with an id-based interface for front ends.
 
 ### Changed
+- The crate is now a library plus a thin command-line binary. The logic that
+  was tangled with printing moved into `src/engine.rs`; `src/main.rs` keeps
+  argument parsing and printing. **No behaviour change:** the output of 21
+  read-only and dry-run commands (stdout, stderr and exit status) is
+  byte-identical before and after.
+- The terminal launcher is now called **Menu Entry Finder (Terminal)**, so it
+  and the desktop app's launcher, **Menu Entry Finder**, can be told apart in
+  the menu.
 - **Renamed from `kappfinder-rs` to `nexus-menu`**, ahead of joining NexusOS.
   The crate, binary, repository, launcher, icon, completions and release
   archives all use the new name; the GitHub repository redirects from the old
@@ -72,6 +116,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for user-local installs.
 
 ### Fixed
+- A unit test read the machine's real application menu, so it failed on any
+  machine that already had a Bottles entry for "Amazon Games". The tests that
+  need a known answer now index only a scratch directory
+  (`Registry::from_dirs`); `Registry::build` is unchanged.
 - The documented and declared minimum Rust version was wrong. The README,
   `CONTRIBUTING.md` and `Cargo.toml` said 1.74, but the locked dependencies
   (`clap`, `indexmap` and `hashbrown` among them) require 1.85, so a 1.74
@@ -79,6 +127,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by running the full test suite on Rust 1.85.0 with `--locked`.
 
 ### Verification
+- The desktop app was run for real on X11 and driven with `xdotool`: its scan
+  numbers match the command line's exactly; a dry run wrote nothing; a real
+  create wrote a file that passes `desktop-file-validate` and is
+  byte-identical to the command line's; removal needs a second click and
+  disarms itself after four seconds; and the user's own generated entries
+  were checksummed before and after and did not change.
+- The updater was rehearsed on real binaries: a 0.1.0 build pointed at a
+  local server offering a 0.2.0 build signed with `rsign`, the tool the
+  release uses. The banner appeared; a binary corrupted by one byte was
+  refused and left the installed file unchanged; the genuine one replaced the
+  file, the old process exited and the new one started with the same
+  arguments. The public key compiled into the app was checked against the
+  production secret key, and `scripts/release-gui.sh` was run end to end with
+  that key, including each of its refusals. **Not yet verified:** an update
+  fetched from GitHub Releases, and the release workflow itself, which can
+  only be exercised by publishing; the first release that includes the app is
+  that test.
+- Tests: 125 for the library and command line (114 before), 40 for the app,
+  including every rejection path of the updater and a whole update over real
+  HTTP. CI has a new `gui` job (fmt, clippy with and without the update test
+  hooks, tests, the manifest script, and a guard that Tauri never enters the
+  root `Cargo.lock`) and validates the app's launcher.
 - CI has a new `msrv` job that reads `rust-version` from `Cargo.toml`, installs
   exactly that toolchain, and runs the test suite on it with `--locked`. The
   declared minimum can no longer drift from what the locked dependencies
@@ -111,6 +181,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   available desktop actions, how to install the launcher alone against an
   existing binary, and how to diagnose a launcher that does nothing.
 - Fixed a stray duplicated line at the end of the project documentation list.
+- Documented the desktop app: installing it, what each tab does, how it updates
+  itself and why that is safe, how to verify a download by hand, and the
+  release process and signing-key custody in CONTRIBUTING.
 
 ## [0.1.0] - 2026-10-07
 

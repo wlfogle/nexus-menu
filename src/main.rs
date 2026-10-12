@@ -1,35 +1,27 @@
 //! nexus-menu — find installed applications that have no menu entry and
 //! generate freedesktop `.desktop` files for them.
 //!
-//! A maintained, desktop-agnostic reimplementation of KDE's long-dead
-//! KAppFinder. Like the original it is catalog-driven: it ships templates for
-//! programs that commonly arrive without a menu entry, checks which of them
-//! are actually installed, and offers to add only the ones missing.
-
-mod catalog;
-mod desktop;
-mod lnk;
-mod prefixes;
-mod registry;
-mod scanner;
-mod select;
-#[cfg(test)]
-mod testutil;
-mod winapps;
+//! This is the command line: argument parsing and printing. Everything that
+//! does the work lives in the library (`src/lib.rs`), which the desktop app
+//! shares.
 
 use std::collections::BTreeMap;
-use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 
-use catalog::{AppTemplate, Catalog, Source};
-use registry::Registry;
+use nexus_menu::catalog::{AppTemplate, Catalog, Source};
+use nexus_menu::engine::{
+    self, default_user_catalog_path, find_candidates, tilde, write_entry, write_file, Candidate,
+    Outcome, WineScan,
+};
+use nexus_menu::registry::{self, Registry};
+use nexus_menu::{desktop, prefixes, scanner, select, winapps};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -159,12 +151,6 @@ enum WineCmd {
     },
 }
 
-/// A catalogued application that is installed but has no menu entry.
-struct Candidate {
-    template: AppTemplate,
-    bin_path: PathBuf,
-}
-
 fn main() -> ExitCode {
     restore_default_sigpipe();
 
@@ -257,21 +243,17 @@ fn run(cli: Cli) -> Result<()> {
     }
 }
 
+fn warn_missing_prefixes(extra: &[PathBuf]) {
+    for path in engine::missing_prefix_args(extra) {
+        eprintln!("warning: --prefix {} does not exist", path.display());
+    }
+}
+
 /// Every Wine prefix the tool can see: the home directory, `$WINEPREFIX`,
 /// `--prefix`, what each launcher declares, and the local disks.
 fn discover_prefixes(extra: &[PathBuf]) -> Vec<prefixes::Prefix> {
-    for path in extra {
-        if !path.exists() {
-            eprintln!("warning: --prefix {} does not exist", path.display());
-        }
-    }
-
-    let home = prefixes::home();
-    let env_prefix = env::var_os("WINEPREFIX")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute());
-    let drives = prefixes::drive_roots(&home);
-    prefixes::discover(&home, env_prefix.as_deref(), extra, &drives)
+    warn_missing_prefixes(extra);
+    engine::discover_prefixes(extra)
 }
 
 fn cmd_wine_prefixes(extra: &[PathBuf]) -> Result<()> {
@@ -288,62 +270,10 @@ fn cmd_wine_prefixes(extra: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-/// What a scan of the Windows apps in your prefixes turned up.
-struct WineScan {
-    tools: winapps::Tools,
-    /// Prefixes searched.
-    prefixes: usize,
-    /// Prefixes nothing can safely be launched from.
-    unhandled: Vec<prefixes::Prefix>,
-    /// User-installed apps found.
-    found: usize,
-    /// Of those, how many an existing entry already launches.
-    covered: usize,
-    /// Apps whose launcher is not installed, so no entry can start them.
-    no_launcher: Vec<winapps::WinApp>,
-    /// The rest: installed, launchable, and unreachable from the menu.
-    candidates: Vec<winapps::WinApp>,
-}
-
+/// Warn about each `--prefix` that names nothing, then scan.
 fn scan_wine(target_dir: &Path, ignore_nodisplay: bool, extra: &[PathBuf]) -> WineScan {
-    let registry = Registry::build(Some(target_dir), ignore_nodisplay);
-    let tools = winapps::Tools::detect(&prefixes::home());
-    let all = discover_prefixes(extra);
-    let found = winapps::collect(&all, &tools);
-
-    let total = found.apps.len();
-    let mut covered = 0usize;
-    let mut no_launcher = Vec::new();
-    let mut candidates = Vec::new();
-    for app in found.apps {
-        if winapps::covered(&app, &registry) {
-            covered += 1;
-        } else if !winapps::launchable(&app, &tools) {
-            no_launcher.push(app);
-        } else {
-            candidates.push(app);
-        }
-    }
-    candidates.sort_by_key(|a| (a.owner, a.name.to_lowercase()));
-
-    WineScan {
-        tools,
-        prefixes: all.len(),
-        unhandled: found.unhandled,
-        found: total,
-        covered,
-        no_launcher,
-        candidates,
-    }
-}
-
-/// `path` with the home directory shown as `~`.
-fn tilde(path: &Path) -> String {
-    match path.strip_prefix(prefixes::home()) {
-        Ok(rest) if rest.as_os_str().is_empty() => "~".to_string(),
-        Ok(rest) => format!("~/{}", rest.display()),
-        Err(_) => path.display().to_string(),
-    }
+    warn_missing_prefixes(extra);
+    engine::scan_wine(target_dir, ignore_nodisplay, extra)
 }
 
 fn print_windows_apps(apps: &[winapps::WinApp]) {
@@ -480,36 +410,6 @@ fn cmd_completions(shell: Shell) -> Result<()> {
     let name = cmd.get_name().to_string();
     clap_complete::generate(shell, &mut cmd, name, &mut io::stdout());
     Ok(())
-}
-
-fn default_user_catalog_path() -> PathBuf {
-    registry::config_home().join("nexus-menu/catalog.toml")
-}
-
-/// Collect catalogued applications that are installed but unreachable from
-/// the menu.
-fn find_candidates(catalog: &Catalog, registry: &Registry) -> (Vec<Candidate>, usize, usize) {
-    let mut candidates = Vec::new();
-    let mut installed = 0usize;
-    let mut covered = 0usize;
-
-    for template in catalog.apps.values() {
-        let Some(bin_path) = scanner::lookup(&template.bin) else {
-            continue;
-        };
-        installed += 1;
-        if registry.covers(&template.bin).is_some() {
-            covered += 1;
-            continue;
-        }
-        candidates.push(Candidate {
-            template: template.clone(),
-            bin_path,
-        });
-    }
-
-    candidates.sort_by(|a, b| a.template.bin.cmp(&b.template.bin));
-    (candidates, installed, covered)
 }
 
 fn cmd_scan(catalog: &Catalog, target_dir: &Path, ignore_nodisplay: bool) -> Result<()> {
@@ -735,15 +635,8 @@ fn cmd_create(
 }
 
 fn cmd_remove(target_dir: &Path, yes: bool, dry_run: bool) -> Result<()> {
-    let registry = Registry::build(Some(target_dir), false);
-
     // Only ever delete from writable locations we own.
-    let user_dir = registry::user_applications_dir();
-    let owned: Vec<&PathBuf> = registry
-        .generated
-        .iter()
-        .filter(|p| p.starts_with(target_dir) || p.starts_with(&user_dir))
-        .collect();
+    let owned = engine::owned_generated(target_dir);
 
     if owned.is_empty() {
         println!("No entries generated by nexus-menu were found.");
@@ -826,111 +719,24 @@ fn cmd_catalog(catalog: &Catalog, user_catalog_path: &Path, missing_only: bool) 
     Ok(())
 }
 
-enum Outcome {
-    Created(PathBuf),
-    Would(PathBuf),
-    Exists(PathBuf),
-}
-
-/// Render and write one entry. Never overwrites unless `force`.
-fn write_entry(
-    template: &AppTemplate,
-    bin_path: &Path,
-    dir: &Path,
-    force: bool,
-    dry_run: bool,
-) -> Result<Outcome> {
-    let filename = format!("{}.desktop", sanitize_stem(&template.bin));
-    write_file(
-        dir,
-        &filename,
-        &desktop::render(template, bin_path),
-        force,
-        dry_run,
-    )
-}
-
-/// Write one `.desktop` file. Never overwrites unless `force`, and never
-/// leaves a partial file behind.
-fn write_file(
-    dir: &Path,
-    filename: &str,
-    contents: &str,
-    force: bool,
-    dry_run: bool,
-) -> Result<Outcome> {
-    let path = dir.join(filename);
-
-    if path.exists() && !force {
-        return Ok(Outcome::Exists(path));
-    }
-    if dry_run {
-        return Ok(Outcome::Would(path));
-    }
-
-    fs::create_dir_all(dir)
-        .with_context(|| format!("creating target directory {}", dir.display()))?;
-
-    // Write to a temporary file in the same directory, then rename, so a
-    // crash can never leave a half-written entry in the menu.
-    let tmp = path.with_extension("desktop.tmp");
-    fs::write(&tmp, contents).with_context(|| format!("writing {}", tmp.display()))?;
-    if let Err(err) = fs::rename(&tmp, &path) {
-        // Do not leave the partial file lying around in an applications dir.
-        let _ = fs::remove_file(&tmp);
-        return Err(err).with_context(|| format!("installing {}", path.display()));
-    }
-
-    Ok(Outcome::Created(path))
-}
-
-/// Keep generated filenames to characters that are safe as a desktop file ID.
-fn sanitize_stem(bin: &str) -> String {
-    let cleaned: String = bin
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    if cleaned.is_empty() {
-        "kappfinder-entry".to_string()
-    } else {
-        cleaned
-    }
-}
-
-/// Ask the desktop environment to re-read the applications directory.
-/// Entirely best-effort: most environments pick changes up via inotify.
+/// Ask the desktop environment to re-read the applications directory, and
+/// say how that went. Entirely best-effort: most environments pick changes
+/// up via inotify.
 fn refresh_desktop_database(dir: &Path) {
-    match Command::new("update-desktop-database").arg(dir).status() {
-        Ok(status) if status.success() => {
-            println!("Refreshed the desktop database for {}", dir.display());
-        }
-        Ok(_) | Err(_) => {
-            println!(
-                "Note: `update-desktop-database` unavailable or failed; your desktop \
-                 will normally pick up {} on its own.",
-                dir.display()
-            );
-        }
+    if engine::refresh_desktop_database(dir) {
+        println!("Refreshed the desktop database for {}", dir.display());
+    } else {
+        println!(
+            "Note: `update-desktop-database` unavailable or failed; your desktop \
+             will normally pick up {} on its own.",
+            dir.display()
+        );
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn sanitizes_filenames() {
-        assert_eq!(sanitize_stem("htop"), "htop");
-        assert_eq!(sanitize_stem("my app"), "my-app");
-        assert_eq!(sanitize_stem("a/b"), "a-b");
-        assert_eq!(sanitize_stem(""), "kappfinder-entry");
-    }
 
     #[test]
     fn cli_parses_without_subcommand() {

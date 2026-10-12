@@ -17,7 +17,7 @@ Nothing replaced the specific job it did, so this does.
 
 **Getting started:** [Requirements](#requirements) ·
 [Install](#install) · [Desktop launcher](#desktop-launcher) ·
-[First run](#first-run) · [Usage](#usage)
+[Desktop app](#desktop-app) · [First run](#first-run) · [Usage](#usage)
 
 **Reference:** [Global options](#global-options) ·
 [Environment](#environment) · [Exit codes](#exit-codes) ·
@@ -82,6 +82,9 @@ never creates anything.
 - Rust 1.85+ to build from source (the prebuilt binary needs no Rust)
 - `desktop-file-utils` — **optional**, only used to refresh the desktop
   database after writing
+- The [desktop app](#desktop-app), which is optional, additionally needs
+  webkit2gtk 4.1 at run time (`libwebkit2gtk-4.1-0` on Debian and Ubuntu
+  22.04 or newer). The command line needs nothing beyond the above.
 
 Works with any freedesktop-compliant desktop: KDE Plasma, GNOME, Xfce, MATE,
 Cinnamon, LXQt, Budgie, and tiling WMs that read `.desktop` files.
@@ -133,6 +136,37 @@ sudo make install                    # system-wide, under /usr/local
 make install PREFIX=$HOME/.local     # or just for you
 ```
 
+### Desktop app
+
+The window is a separate download from the command line. Take
+`nexus-menu-gui-<version>-x86_64-linux` from the
+[latest release](https://github.com/wlfogle/nexus-menu/releases/latest); a
+`.minisig` signature sits beside it. It is about 8 MB and uses your system's
+webkit2gtk, so it needs `libwebkit2gtk-4.1-0` installed. It is built on Ubuntu
+22.04, so it needs glibc 2.35 or newer.
+
+```fish
+install -Dm755 nexus-menu-gui-*-x86_64-linux ~/.local/bin/nexus-menu-gui
+```
+
+To get it into the application menu, run this from the command-line archive
+(or a checkout), which ships the launcher:
+
+```fish
+make install-gui-launcher PREFIX=$HOME/.local
+```
+
+To build it from source you need a current stable Rust and Tauri's development
+packages:
+
+```fish
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
+  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+make install-gui PREFIX=$HOME/.local     # binary, launcher and icon
+```
+
+See [Desktop app](#desktop-app) for what it does and how it updates itself.
+
 ### Put it on your PATH
 
 `~/.local/bin` is not on `$PATH` by default on every distribution.
@@ -161,6 +195,7 @@ since `remove` is what knows which files are its own:
 ```fish
 nexus-menu remove
 rm ~/.local/bin/nexus-menu        # or: cargo uninstall nexus-menu
+rm ~/.local/bin/nexus-menu-gui    # the desktop app, if you installed it
 rm -rf ~/.config/nexus-menu       # only if you made a user catalog
 ```
 
@@ -196,9 +231,10 @@ That places these files:
 | `$PREFIX/share/bash-completion/completions/nexus-menu` | bash completions |
 | `$PREFIX/share/zsh/site-functions/_nexus-menu` | zsh completions |
 
-Look for **Menu Entry Finder** in your application menu. It opens a terminal
-window, runs `install`, and waits for Enter at the end so the summary is
-still on screen when the tool exits.
+Look for **Menu Entry Finder (Terminal)** in your application menu. It opens a
+terminal window, runs `install`, and waits for Enter at the end so the summary
+is still on screen when the tool exits. (The desktop app has its own launcher,
+**Menu Entry Finder**; see [Desktop app](#desktop-app).)
 
 Right-click the launcher for the other commands, exposed as desktop actions:
 
@@ -221,6 +257,61 @@ bare name would fail for exactly the people who need it most.
 
 The launcher carries no `X-NexusMenu-Generated` marker, so
 `nexus-menu remove` will never delete it.
+
+## Desktop app
+
+`nexus-menu-gui` is a window for the same job as the command line. It runs the
+same code, so an entry made in the window is byte-for-byte the one
+`nexus-menu wine install` writes. [Install](#desktop-app) it separately; the
+command line does not depend on it.
+
+- **Missing** lists the applications that have no menu entry, grouped by where
+  they come from: programs on your `PATH` first, then Windows apps grouped by
+  the tool that owns their Wine prefix. Filter, tick, and press **Create
+  selected**. **Dry run** reports what would be written and writes nothing;
+  **Overwrite existing entries** is `--force`.
+- **Created** lists the entries nexus-menu made and removes the ones you tick.
+  Removing asks for a second click, and deletes the `.desktop` file only,
+  never the program.
+- **Prefixes** lists the Wine prefixes it found and which tool manages each.
+
+It takes the command line's `--dir`, `--catalog`, `--prefix` and
+`--ignore-nodisplay`, plus `--no-update-check`.
+
+### Updating
+
+An installed copy updates itself. On launch it checks, quietly in the
+background, whether the latest release is newer. If it is, a banner offers
+**Install and restart**; nothing is installed without that click. The
+command-line tool is not updated this way.
+
+Why that is safe to leave on:
+
+- Releases are signed with a [Minisign](https://jedisct1.github.io/minisign/)
+  key whose public half is compiled into the app (key ID `72B341C1C33CBF82`,
+  `RWSCvzzDwUGzcj+r+gMxp0xOOsnu3D/HmB0vq5E1nGVqOqGl5+b6ymS2`). A download
+  whose signature does not verify is discarded.
+- The signature also covers the version number. Someone who can serve files
+  to you still cannot pass an old, genuinely signed build off as a newer one.
+- Only https is used, a download over 128 MiB is refused, and it must be an
+  executable.
+- The new file is written beside the installed one and renamed over it, so a
+  failure at any step leaves the installed binary exactly as it was.
+
+It will not update a copy it cannot safely replace. One in a directory you
+cannot write to (for example `/usr/local/bin` after `sudo make install-gui`)
+says so and points you at the releases page, and a build running from a cargo
+`target/` directory never replaces itself. `--no-update-check` turns the check
+off altogether.
+
+To check a download by hand, use `rsign` (`cargo install rsign2`) or any other
+Minisign tool:
+
+```fish
+rsign verify -P RWSCvzzDwUGzcj+r+gMxp0xOOsnu3D/HmB0vq5E1nGVqOqGl5+b6ymS2 \
+  -x nexus-menu-gui-<version>-x86_64-linux.minisig \
+  nexus-menu-gui-<version>-x86_64-linux
+```
 
 ## First run
 
@@ -545,6 +636,7 @@ Matching is by, in order:
 ```fish
 make check      # fmt + clippy -D warnings + the unit tests
 make validate   # desktop-file-validate the shipped launcher
+make check-gui  # the same for the desktop app (needs Tauri's packages)
 ```
 
 Tests cover `Exec` tokenising and wrapper unwrapping, Desktop Entry
@@ -579,14 +671,20 @@ desktop-file-validate $T/*.desktop    # zero errors, warnings, and hints
 
 ## Architecture
 
+The crate is a library plus a thin command-line binary, and the desktop app is
+a second crate that uses the same library.
+
 | Module | Responsibility |
 | --- | --- |
+| `src/lib.rs` | The library root; everything below except `main.rs` is in it |
+| `src/engine.rs` | Scanning, creating and removing entries, returning data instead of printing. The command line formats it; the desktop app shows it. Also the id-based interface the app uses, so the page never hands over a path |
+| `gui/` | The desktop app: a separate Cargo workspace (Tauri), so its dependency tree stays out of the command line's lockfile. `src/service.rs` is its logic, `src/updater.rs` the self-update, `ui/` the page |
 | `src/catalog.rs` | Template model; built-in catalog embedded via `include_str!`, overlaid by the user catalog |
 | `src/desktop.rs` | Desktop Entry parsing, `Exec` tokenising/unwrapping, entry rendering and escaping |
 | `src/registry.rs` | Index of existing entries across XDG, Flatpak, and Snap directories |
 | `src/scanner.rs` | `$PATH` resolution, executable detection, orphan noise filter |
 | `src/select.rs` | Interactive numbered-list selection and confirmation |
-| `src/main.rs` | CLI and command implementations |
+| `src/main.rs` | Argument parsing and printing for the command line |
 
 ## Troubleshooting
 
@@ -694,6 +792,9 @@ Only files this tool generated are touched.
   the same name.
 - Icons are theme names, so an application with no themed icon falls back to a
   generic one.
+- The desktop app has been run on X11 (KDE Plasma) only; Wayland has not been
+  tried. It is Linux x86_64 only, and the prebuilt one needs glibc 2.35 or
+  newer.
 
 ## Project documentation
 
@@ -704,8 +805,12 @@ Only files this tool generated are touched.
   inline
 - [desktop/nexus-menu.desktop](desktop/nexus-menu.desktop) — the
   launcher `make install` installs, with its desktop actions
+- [desktop/nexus-menu-gui.desktop](desktop/nexus-menu-gui.desktop) — the
+  desktop app's launcher, installed by `make install-gui`
 - [Makefile](Makefile) — build, install, uninstall, and the
   `desktop-file-validate` check
+- [scripts/](scripts) — the end-to-end check for Windows apps, and the
+  release tooling for the desktop app (see CONTRIBUTING)
 
 ## Contributing
 

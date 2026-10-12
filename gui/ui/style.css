@@ -1,0 +1,166 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f6f6f7;
+  --panel: #ffffff;
+  --text: #1d1d20;
+  --muted: #62646b;
+  --line: #d9dadf;
+  --accent: #2b6cdf;
+  --accent-text: #ffffff;
+  --danger: #c0392b;
+  --ok: #1e7d3c;
+  --warn: #9a6700;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1c1f;
+    --panel: #25262a;
+    --text: #e8e8ea;
+    --muted: #9b9da5;
+    --line: #3a3b41;
+    --accent: #5b92f0;
+    --accent-text: #0b1220;
+    --danger: #ef6b5c;
+    --ok: #5fcb86;
+    --warn: #e2b04a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+h1 { margin: 0; font-size: 16px; font-weight: 600; }
+#version { font-size: 12px; margin-left: -8px; }
+
+nav { display: flex; gap: 4px; flex: 1; }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.tab { border-color: transparent; background: transparent; }
+.tab[aria-selected="true"] { background: var(--bg); border-color: var(--line); font-weight: 600; }
+
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+button.danger { color: var(--danger); border-color: var(--danger); }
+button.danger.armed { background: var(--danger); color: var(--bg); }
+
+main { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 12px 16px; }
+
+section { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+section[hidden] { display: none; }
+
+.toolbar, .actions { display: flex; align-items: center; gap: 8px; }
+.actions { justify-content: flex-end; flex-wrap: wrap; }
+.actions .muted { margin-right: auto; }
+
+input[type="search"] {
+  flex: 1;
+  font: inherit;
+  color: inherit;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+}
+
+.list {
+  flex: 1;
+  min-height: 60px;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+#results, #remove-results { flex: 0 1 30%; }
+
+.group-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+.group-head .muted { font-weight: 400; }
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.row:last-child { border-bottom: none; }
+.row label { display: flex; align-items: baseline; gap: 10px; flex: 1; min-width: 0; cursor: pointer; }
+.row .name { font-weight: 500; white-space: nowrap; }
+.row .detail { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.row .tag { margin-left: auto; white-space: nowrap; }
+.row .tag.ok { color: var(--ok); }
+.row .tag.warn { color: var(--warn); }
+.row .tag.bad { color: var(--danger); }
+
+.muted { color: var(--muted); margin: 0; }
+.empty { padding: 24px; text-align: center; color: var(--muted); }
+
+#banner, #error { padding: 8px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+#banner { background: var(--accent); color: var(--accent-text); }
+#banner button { color: var(--accent-text); background: transparent; border-color: currentColor; }
+#error { background: var(--danger); color: var(--bg); }
+#error button { color: var(--bg); background: transparent; border-color: currentColor; }
+[hidden] { display: none !important; }
+
+#busy {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  font-size: 15px;
+}
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
