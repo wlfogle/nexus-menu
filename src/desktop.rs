@@ -14,9 +14,13 @@ pub const GENERATED_KEY: &str = "X-NexusMenu-Generated";
 /// The marker written before the tool was renamed from kappfinder-rs. It is
 /// still honoured when reading, so `remove` keeps finding entries that earlier
 /// releases generated; it is never written.
-const LEGACY_GENERATED_KEY: &str = "X-KAppFinder-Generated";
+pub const LEGACY_GENERATED_KEY: &str = "X-KAppFinder-Generated";
 /// Records which catalog the entry came from (builtin / user / auto).
 pub const SOURCE_KEY: &str = "X-NexusMenu-Source";
+/// Marker written into a copy of a system entry that the desktop app edited or
+/// hid. It is what makes that copy ours to delete again ("restore original");
+/// a file without it, or without `GENERATED_KEY`, is never deleted.
+pub const OVERRIDE_KEY: &str = "X-NexusMenu-Override";
 
 /// Command wrappers that are not themselves the application being launched.
 const WRAPPERS: &[&str] = &[
@@ -134,7 +138,7 @@ pub fn parse(path: &Path) -> Option<DesktopEntry> {
 }
 
 /// Reverse the Desktop Entry value escaping rules (`\s \n \t \r \\`).
-fn unescape_value(s: &str) -> String {
+pub fn unescape_value(s: &str) -> String {
     if !s.contains('\\') {
         return s.to_string();
     }
@@ -162,7 +166,7 @@ fn unescape_value(s: &str) -> String {
 }
 
 /// Apply Desktop Entry value escaping to a string destined for a file.
-fn escape_value(s: &str) -> String {
+pub fn escape_value(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {

@@ -14,6 +14,7 @@
 pub mod catalog;
 pub mod desktop;
 pub mod engine;
+pub mod entries;
 pub mod lnk;
 pub mod prefixes;
 pub mod registry;
