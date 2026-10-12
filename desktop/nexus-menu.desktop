@@ -23,11 +23,15 @@ Terminal=true
 Categories=Settings;DesktopSettings;
 Keywords=application;menu;launcher;desktop entry;freedesktop;xdg;kappfinder;missing;
 StartupNotify=false
-Actions=scan;orphans;remove;
+Actions=scan;wine;orphans;remove;
 
 [Desktop Action scan]
 Name=Scan without changing anything
 Exec=sh -c "nexus-menu scan; echo; echo 'Press Enter to close this window.'; read done"
+
+[Desktop Action wine]
+Name=Create entries for Windows apps
+Exec=sh -c "nexus-menu wine install; echo; echo 'Press Enter to close this window.'; read done"
 
 [Desktop Action orphans]
 Name=List every binary with no menu entry

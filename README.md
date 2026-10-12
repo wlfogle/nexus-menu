@@ -239,6 +239,9 @@ is still on screen when the tool exits. (The desktop app has its own launcher,
 Right-click the launcher for the other commands, exposed as desktop actions:
 
 - **Scan without changing anything** — the read-only report
+- **Create entries for Windows apps** — `wine install`, for the apps in your
+  Wine prefixes and game launchers (the default action covers programs on
+  your `PATH` only)
 - **List every binary with no menu entry** — the `orphans` sweep
 - **Remove the entries this tool created** — the undo
 
