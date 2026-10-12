@@ -1,4 +1,5 @@
 Finds installed applications that have no menu entry, and creates one.
+(Formerly `kappfinder-rs`.)
 
 A maintained, desktop-agnostic reimplementation of KDE's
 [KAppFinder](https://apps.kde.org/kappfinder/), which was marked unmaintained

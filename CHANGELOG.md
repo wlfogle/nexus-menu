@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-12
+
+The first release under the name nexus-menu. It adds Windows apps in Wine
+prefixes and game launchers, a desktop app that updates itself, a launcher,
+shell completions and a Makefile.
+
 ### Added
 - **Desktop launcher.** `desktop/nexus-menu.desktop` puts the tool in the
   application menu as **Menu Entry Finder**. It runs in a terminal and pauses
@@ -140,10 +146,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file, the old process exited and the new one started with the same
   arguments. The public key compiled into the app was checked against the
   production secret key, and `scripts/release-gui.sh` was run end to end with
-  that key, including each of its refusals. **Not yet verified:** an update
-  fetched from GitHub Releases, and the release workflow itself, which can
-  only be exercised by publishing; the first release that includes the app is
-  that test.
+  that key, including each of its refusals. An update fetched from GitHub
+  Releases, and the release workflow itself, could only be exercised by
+  publishing this release.
 - Tests: 125 for the library and command line (114 before), 40 for the app,
   including every rejection path of the updater and a whole update over real
   HTTP. CI has a new `gui` job (fmt, clippy with and without the update test
@@ -256,5 +261,6 @@ entries only for the ones missing.
   the program `flatpak` rather than the application, so a Flatpak install
   does not suppress an entry for a native binary of the same name.
 
-[Unreleased]: https://github.com/wlfogle/nexus-menu/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/wlfogle/nexus-menu/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/wlfogle/nexus-menu/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/wlfogle/nexus-menu/releases/tag/v0.1.0
