@@ -6,8 +6,11 @@
   "permissions": [
     "allow-scan",
     "allow-install",
-    "allow-list-generated",
-    "allow-remove",
+    "allow-list-entries",
+    "allow-get-entry",
+    "allow-save-entry",
+    "allow-remove-entries",
+    "allow-restore-entry",
     "allow-prefixes",
     "allow-check-update",
     "allow-install-update"

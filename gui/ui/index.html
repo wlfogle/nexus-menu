@@ -13,7 +13,7 @@
     <span id="version" class="muted"></span>
     <nav aria-label="Sections">
       <button type="button" class="tab" data-tab="missing" aria-selected="true">Missing</button>
-      <button type="button" class="tab" data-tab="created" aria-selected="false">Created</button>
+      <button type="button" class="tab" data-tab="entries" aria-selected="false">Entries</button>
       <button type="button" class="tab" data-tab="prefixes" aria-selected="false">Prefixes</button>
     </nav>
     <button type="button" id="rescan">Rescan</button>
@@ -40,14 +40,77 @@
       <div id="results" class="list" hidden></div>
     </section>
 
-    <section id="tab-created" aria-label="Entries nexus-menu created" hidden>
-      <p id="created-summary" class="muted"></p>
-      <div id="created-list" class="list"></div>
-      <div class="actions">
-        <span id="created-count" class="muted"></span>
-        <button type="button" id="remove" class="danger" disabled>Remove selected</button>
+    <section id="tab-entries" aria-label="Menu entries" hidden>
+      <div id="entries-list-view">
+        <p id="entries-summary" class="muted"></p>
+        <div class="toolbar">
+          <div id="entries-origins" class="segmented" role="group" aria-label="Show entries from"></div>
+          <input id="entries-filter" type="search" placeholder="Filter by name or id" aria-label="Filter entries">
+        </div>
+        <div id="entries-list" class="list"></div>
+        <div class="actions">
+          <span id="entries-count" class="muted"></span>
+          <button type="button" id="entries-remove-selected" class="danger" disabled>Remove selected</button>
+        </div>
+        <div id="entries-results" class="list" hidden></div>
       </div>
-      <div id="remove-results" class="list" hidden></div>
+
+      <div id="entry-edit" hidden>
+        <h2 id="edit-title"></h2>
+        <form id="edit-form" autocomplete="off">
+          <div class="form-grid">
+            <label for="ef-name">Name</label>
+            <div>
+              <input id="ef-name" type="text" maxlength="200">
+              <div class="field-error" data-for="name"></div>
+            </div>
+
+            <label for="ef-comment">Comment</label>
+            <div>
+              <input id="ef-comment" type="text" maxlength="500">
+              <div class="field-error" data-for="comment"></div>
+            </div>
+
+            <label for="ef-exec">Command</label>
+            <div>
+              <input id="ef-exec" type="text" maxlength="2000">
+              <div class="field-error" data-for="exec"></div>
+            </div>
+
+            <label for="ef-icon">Icon</label>
+            <div>
+              <input id="ef-icon" type="text" maxlength="500">
+              <div class="hint">An icon name, or a full path starting with /</div>
+              <div class="field-error" data-for="icon"></div>
+            </div>
+
+            <label for="ef-categories">Categories</label>
+            <div>
+              <input id="ef-categories" type="text" maxlength="500">
+              <div class="hint">Separated by semicolons, for example Utility;Network;</div>
+              <div class="field-error" data-for="categories"></div>
+            </div>
+
+            <label for="ef-keywords">Keywords</label>
+            <div>
+              <input id="ef-keywords" type="text" maxlength="500">
+              <div class="hint">Extra search words, separated by semicolons</div>
+              <div class="field-error" data-for="keywords"></div>
+            </div>
+
+            <label for="ef-terminal">Run in a terminal</label>
+            <div><input id="ef-terminal" type="checkbox"></div>
+          </div>
+
+          <p id="edit-writes" class="muted"></p>
+          <ul id="edit-notes" class="notes"></ul>
+
+          <div class="actions">
+            <button type="button" id="edit-cancel">Cancel</button>
+            <button type="submit" id="edit-save" class="primary">Save</button>
+          </div>
+        </form>
+      </div>
     </section>
 
     <section id="tab-prefixes" aria-label="Wine prefixes" hidden>

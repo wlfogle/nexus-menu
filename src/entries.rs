@@ -519,6 +519,19 @@ fn quotes_balanced(exec: &str) -> bool {
     !quoted
 }
 
+/// What the page calls a field, so every message reads as a sentence.
+fn label(field: &str) -> &'static str {
+    match field {
+        "name" => "Name",
+        "comment" => "Comment",
+        "exec" => "Command",
+        "icon" => "Icon",
+        "categories" => "Categories",
+        "keywords" => "Keywords",
+        _ => "This field",
+    }
+}
+
 fn single_line(
     field: &'static str,
     value: &str,
@@ -529,12 +542,15 @@ fn single_line(
     if v.chars().any(char::is_control) {
         errors.push(FieldError {
             field,
-            message: "must be one line, with no control characters".to_string(),
+            message: format!(
+                "{} must be one line, with no control characters",
+                label(field)
+            ),
         });
     } else if v.chars().count() > max {
         errors.push(FieldError {
             field,
-            message: format!("is too long (at most {max} characters)"),
+            message: format!("{} is too long (at most {max} characters)", label(field)),
         });
     }
     v
@@ -557,7 +573,7 @@ fn validate(input: &Fields) -> Result<Fields, Vec<FieldError>> {
         if value.is_empty() {
             errors.push(FieldError {
                 field,
-                message: "is required".to_string(),
+                message: format!("{} is required", label(field)),
             });
         }
     };
@@ -572,7 +588,7 @@ fn validate(input: &Fields) -> Result<Fields, Vec<FieldError>> {
     if !exec.is_empty() && !quotes_balanced(&exec) {
         errors.push(FieldError {
             field: "exec",
-            message: "has an opening quote that is never closed".to_string(),
+            message: "Command has an opening quote that is never closed".to_string(),
         });
     }
 
@@ -580,7 +596,7 @@ fn validate(input: &Fields) -> Result<Fields, Vec<FieldError>> {
     if icon.contains('/') && !icon.starts_with('/') {
         errors.push(FieldError {
             field: "icon",
-            message: "must be an icon name, or an absolute path starting with /".to_string(),
+            message: "Icon must be an icon name, or an absolute path starting with /".to_string(),
         });
     }
 
@@ -1481,6 +1497,9 @@ Exec=fox --new\n";
         };
         let named: Vec<&str> = errs.iter().map(|e| e.field).collect();
         assert_eq!(named, vec!["name", "exec"]);
+        // Each message is a sentence of its own, ready to show under the field.
+        let said: Vec<&str> = errs.iter().map(|e| e.message.as_str()).collect();
+        assert_eq!(said, vec!["Name is required", "Command is required"]);
     }
 
     // --- remove and restore ----------------------------------------------------

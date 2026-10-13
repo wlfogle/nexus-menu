@@ -8,8 +8,11 @@ fn main() {
         tauri_build::AppManifest::new().commands(&[
             "scan",
             "install",
-            "list_generated",
-            "remove",
+            "list_entries",
+            "get_entry",
+            "save_entry",
+            "remove_entries",
+            "restore_entry",
             "prefixes",
             "check_update",
             "install_update",
