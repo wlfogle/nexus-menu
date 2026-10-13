@@ -136,6 +136,47 @@ input[type="search"] {
 .muted { color: var(--muted); margin: 0; }
 .empty { padding: 24px; text-align: center; color: var(--muted); }
 
+/* Entries tab */
+#entries-list-view { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+
+.segmented { display: flex; }
+.segmented button { border-radius: 0; margin-left: -1px; }
+.segmented button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+.segmented button:last-child { border-radius: 0 6px 6px 0; }
+.segmented button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); position: relative; }
+
+.entry-main { display: flex; align-items: baseline; gap: 10px; flex: 1; min-width: 0; }
+.row-actions { display: flex; gap: 6px; margin-left: auto; flex-shrink: 0; }
+button.small { padding: 2px 9px; font-size: 12px; }
+button.armed { background: var(--danger); color: var(--bg); border-color: var(--danger); }
+.row.removed .name { text-decoration: line-through; color: var(--muted); }
+
+.badge { font-size: 11px; padding: 0 6px; border-radius: 9px; border: 1px solid currentColor; white-space: nowrap; }
+.badge.ok { color: var(--ok); }
+.badge.warn { color: var(--warn); }
+.badge.bad { color: var(--danger); }
+
+#entry-edit { flex: 1; min-height: 0; overflow: auto; }
+#entry-edit h2 { margin: 0 0 12px; font-size: 15px; }
+.form-grid { display: grid; grid-template-columns: max-content 1fr; gap: 10px 14px; align-items: start; max-width: 760px; }
+.form-grid > label { padding-top: 6px; text-align: right; }
+.form-grid input[type="checkbox"] { margin: 8px 0 0; }
+.form-grid { margin-bottom: 14px; }
+.form-grid input[type="text"] {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+}
+.hint { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.field-error { color: var(--danger); font-size: 12px; margin-top: 2px; }
+.field-error:empty { display: none; }
+.notes { color: var(--muted); font-size: 13px; margin: 6px 0 14px; padding-left: 20px; }
+.notes:empty { display: none; }
+
 #banner, #error { padding: 8px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
 #banner { background: var(--accent); color: var(--accent-text); }
 #banner button { color: var(--accent-text); background: transparent; border-color: currentColor; }

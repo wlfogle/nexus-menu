@@ -11,8 +11,9 @@ mod updater;
 
 use std::process::ExitCode;
 
-use nexus_menu::engine::{Generated, InstallResult, PrefixInfo, RemoveResult};
-use service::{ScanView, Service};
+use nexus_menu::engine::{InstallResult, PrefixInfo};
+use nexus_menu::entries::{EntryDetail, EntryInfo, Fields, Restored, SaveError, Saved};
+use service::{RemoveOutcome, ScanView, Service};
 use tauri::State;
 use updater::{Http, UpdateService, UpdateView};
 
@@ -35,14 +36,32 @@ fn install(
     service.install(&ids, force, dry_run)
 }
 
+// Entries are named by desktop file ID. The page never supplies a path, and the
+// engine refuses an id that could name anything but an entry.
+
 #[tauri::command(async)]
-fn list_generated(service: State<'_, Service>) -> Vec<Generated> {
-    service.list_generated()
+fn list_entries(service: State<'_, Service>) -> Vec<EntryInfo> {
+    service.entries()
 }
 
 #[tauri::command(async)]
-fn remove(service: State<'_, Service>, ids: Vec<String>) -> Vec<RemoveResult> {
-    service.remove(&ids)
+fn get_entry(service: State<'_, Service>, id: String) -> Result<EntryDetail, String> {
+    service.entry(&id)
+}
+
+#[tauri::command(async)]
+fn save_entry(service: State<'_, Service>, id: String, fields: Fields) -> Result<Saved, SaveError> {
+    service.save_entry(&id, &fields)
+}
+
+#[tauri::command(async)]
+fn remove_entries(service: State<'_, Service>, ids: Vec<String>) -> Vec<RemoveOutcome> {
+    service.remove_entries(&ids)
+}
+
+#[tauri::command(async)]
+fn restore_entry(service: State<'_, Service>, id: String) -> Result<Restored, String> {
+    service.restore_entry(&id)
 }
 
 #[tauri::command(async)]
@@ -95,8 +114,11 @@ fn main() -> ExitCode {
         .invoke_handler(tauri::generate_handler![
             scan,
             install,
-            list_generated,
-            remove,
+            list_entries,
+            get_entry,
+            save_entry,
+            remove_entries,
+            restore_entry,
             prefixes,
             check_update,
             install_update

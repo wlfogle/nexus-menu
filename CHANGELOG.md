@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The desktop app can edit, hide and restore any menu entry.** The **Created**
+  tab is now an **Entries** tab that lists every application entry on the
+  machine, filtered by where it came from (created by nexus-menu, yours,
+  system, or all) and by name.
+  - **Edit** changes the name, comment, command, icon, categories, keywords
+    and run-in-terminal switch. Problems show under the field they belong to
+    and nothing is written until the values are accepted. The form says what a
+    save will do first.
+  - **Remove** (**Hide** for system entries) takes two clicks. An entry
+    nexus-menu made is deleted; a file of your own is moved to a backup folder,
+    not deleted; a system entry is hidden with `NoDisplay=true` in a copy in
+    your own folder.
+  - **Restore original** undoes any of these.
+  - A system file is never written. Editing or hiding one writes a copy to your
+    applications folder, marked `X-NexusMenu-Override=true`. Before the first
+    change to a file nexus-menu did not make, the original is saved once in
+    `nexus-menu/backups` beside the applications folder.
+  - Only the lines that changed are rewritten, so comments, unknown keys and
+    `[Desktop Action]` groups survive. Changing a name, comment or keywords
+    drops the translations of that field; changing the command also drops
+    `TryExec` and turns off `DBusActivatable`.
+  - An entry whose system file changed after you edited it is flagged, since
+    your copy is hiding the update.
+- `src/entries.rs`, the library module behind it, which takes its directories as
+  an argument so its tests run on scratch trees and never the real menu.
+
+### Changed
+- The desktop app now has ten commands instead of seven: `list_generated` and
+  `remove` are replaced by `list_entries`, `get_entry`, `save_entry`,
+  `remove_entries` and `restore_entry`. The page still sends only ids and field
+  values, never a path.
+- The library no longer exports `engine::list_generated`, `remove_generated`,
+  `Generated` and `RemoveResult`; `entries` replaces them for the app. The
+  command line's `remove` is unchanged and still deletes only files carrying a
+  generated marker.
+- CONTRIBUTING's rule on what may be deleted now covers the app.
+
+### Verification
+- The Entries tab was driven in a real window (X11, on a nested display, so
+  nothing could reach the desktop) against a scratch menu made of copies of real
+  entries, one hand-written entry and one made by nexus-menu. Checked on disk
+  after each step: editing a system entry writes a marked copy and a snapshot
+  that equals the original, and the system file's checksum does not change;
+  translations of the changed fields are gone while the action groups' and the
+  other fields' stay; hiding writes `NoDisplay=true`; restoring deletes the copy
+  and the snapshot; a hand-written entry is edited in place with its comment
+  and unknown key kept, removed to the backup folder, and restored twice back to
+  a file byte-identical to the original; a created entry is deleted by the bulk
+  button; an entry with colons in its name is edited; an empty name is refused
+  under the field and the message clears when the field is touched.
+  `desktop-file-validate` accepts the output. Your real applications folder was
+  checked before and after and did not change.
+- Tests: 30 new for the engine and 3 new in the app, 144 and 42 in all.
+- Not verified: a change appearing in Plasma's own menu, and Wayland.
+
 ## [0.2.1] - 2026-10-12
 
 A small release after 0.2.0: a launcher action for Windows apps, and CI and
