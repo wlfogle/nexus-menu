@@ -132,7 +132,7 @@ brings several hundred dependencies, and they must not enter the root
 `Cargo.lock`, which the static musl release and the `msrv` job build from. CI
 fails if a Tauri crate shows up there. The app uses the command line's code
 through the library (`nexus-menu = { path = ".." }`), so logic belongs in
-`src/engine.rs`, not in the app.
+`src/engine.rs` and `src/entries.rs`, not in the app.
 
 Building it needs Tauri's development packages and a current stable Rust:
 
@@ -152,7 +152,9 @@ Things that are easy to get wrong:
   is the point.
 - **The page never sends a path or a URL.** It sends ids that the engine handed
   out, and the engine looks each one up. Keep it that way; the tests in
-  `gui/src/service.rs` and `src/engine.rs` assert it.
+  `gui/src/service.rs`, `src/engine.rs` and `src/entries.rs` assert it. The
+  entry commands (`list_entries`, `get_entry`, `save_entry`, `remove_entries`,
+  `restore_entry`) take a desktop file ID and field values, never a path.
 - **Page data goes in with `textContent`, never `innerHTML`.** Names come from
   files on disk.
 - **The `update-test-hooks` feature is for rehearsals only.** It lets the update
@@ -223,15 +225,17 @@ hand-written, and two things about it are load-bearing:
   `Exec=` in the form `sh -c "nexus-menu …"` and `TryExec=nexus-menu`
   on its own line. If you add or remove a desktop action, update the expected
   count in the CI step.
-- **It must never carry `X-NexusMenu-Generated`.** That marker is what
-  `remove` deletes by, and the launcher is not the tool's own output.
+- **It must never carry `X-NexusMenu-Generated` or `X-NexusMenu-Override`.**
+  Those markers are what `remove` and the desktop app delete by, and the
+  launcher is not the tool's own output.
 
 The desktop app's launcher, [`desktop/nexus-menu-gui.desktop`](desktop/nexus-menu-gui.desktop),
 follows the same rule: `make install-gui-launcher` rewrites `Exec=` and
 `TryExec=` (both must stay as the bare `nexus-menu-gui` on their own lines, and
 CI asserts the rewrite matched), and it must never carry
-`X-NexusMenu-Generated`. Its `StartupWMClass` is the window class the app
-really reports (`nexus-menu-gui`); change one only with the other.
+`X-NexusMenu-Generated` or `X-NexusMenu-Override`. Its `StartupWMClass` is the
+window class the app really reports (`nexus-menu-gui`); change one only with
+the other.
 
 Validate after any change:
 
@@ -253,10 +257,21 @@ House rules, mostly inherited from the problem domain:
   found by asserting an invariant between two modules, not by listing
   exceptions. If you find yourself adding a name to an allowlist, consider
   whether the rule itself is wrong.
-- **Never widen what `remove` deletes.** It only touches files carrying the
-  `X-NexusMenu-Generated` marker (or the legacy `X-KAppFinder-Generated`
-  one that releases before the rename wrote), inside directories the user
-  owns.
+- **Never widen what is deleted.** The command-line `remove` only touches
+  files carrying the `X-NexusMenu-Generated` marker (or the legacy
+  `X-KAppFinder-Generated` one that releases before the rename wrote), inside
+  directories the user owns. The desktop app's Entries tab (`src/entries.rs`)
+  may also delete a file carrying `X-NexusMenu-Override`, the marker on the
+  copies it makes of system entries, and nothing else. A hand-written file is
+  moved to the backup folder instead of deleted, and a system file is never
+  written. The marker is checked on the file as it is read at that moment.
+- **Writes stay in two places.** The app writes only to the user's applications
+  folder and to `<parent>/nexus-menu/backups` beside it, so `--dir` moves both.
+  Before the first change to a file nexus-menu did not make, the original is
+  saved once as `<id>.orig`; a removed hand-written file is kept as
+  `<id>.removed`. A new operation needs tests like the existing ones: a system
+  file's bytes are identical afterwards, nothing is created when the input is
+  refused, and an id that could name another path is rejected.
 
 ## Reporting bugs
 

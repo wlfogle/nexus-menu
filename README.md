@@ -197,6 +197,7 @@ nexus-menu remove
 rm ~/.local/bin/nexus-menu        # or: cargo uninstall nexus-menu
 rm ~/.local/bin/nexus-menu-gui    # the desktop app, if you installed it
 rm -rf ~/.config/nexus-menu       # only if you made a user catalog
+rm -rf ~/.local/share/nexus-menu  # the originals the desktop app saved; only if you will never restore anything
 ```
 
 If you installed with `make`, the matching target removes the binary, the
@@ -273,13 +274,65 @@ command line does not depend on it.
   the tool that owns their Wine prefix. Filter, tick, and press **Create
   selected**. **Dry run** reports what would be written and writes nothing;
   **Overwrite existing entries** is `--force`.
-- **Created** lists the entries nexus-menu made and removes the ones you tick.
-  Removing asks for a second click, and deletes the `.desktop` file only,
-  never the program.
+- **Entries** lists every application entry on the machine and lets you edit,
+  remove or hide any of them, and put them back. See
+  [Editing and removing entries](#editing-and-removing-entries).
 - **Prefixes** lists the Wine prefixes it found and which tool manages each.
 
 It takes the command line's `--dir`, `--catalog`, `--prefix` and
 `--ignore-nodisplay`, plus `--no-update-check`.
+
+### Editing and removing entries
+
+The **Entries** tab lists every application entry on the machine. The buttons
+above the list choose where they come from: **Created by nexus-menu** (the
+default), **Yours** (files in your own applications folder that nexus-menu did
+not write), **System** (installed by packages) or **All**. The box filters by
+name or id.
+
+**Edit** opens a form for the name, comment, command, icon, categories,
+keywords and the run-in-terminal switch. Before you save, the form says what
+the save will do. What happens to the file depends on where the entry came
+from:
+
+- **Made by nexus-menu:** the file is changed in place and keeps its marker.
+- **Yours:** the file is changed in place, and only the lines you changed.
+  Comments, keys the form does not know and `[Desktop Action]` groups stay as
+  they were. A copy of the file is saved once, before the first change.
+- **System:** the system file is never written. A copy goes into your own
+  applications folder under the same name, marked `X-NexusMenu-Override=true`,
+  and the desktop uses that instead (the same way KDE's own menu editor makes a
+  change). The system file as it was is saved first.
+
+Changing the name, comment or keywords removes that field's translations, which
+would otherwise go on showing the old text in other languages; translations of
+fields you did not change are kept. Changing the command also removes
+`TryExec`, which would still point at the old program and can hide the entry,
+and turns off `DBusActivatable`, which would make launchers ignore the command.
+A problem with a value is shown under its field and nothing is written.
+
+**Remove** (**Hide** for a system entry) asks for a second click:
+
+- **Made by nexus-menu:** the file is deleted. The program is not touched.
+- **Yours:** the file is moved to the backup folder, not deleted. It stays in
+  the list, struck through, until you restore it.
+- **System:** the copy in your folder is marked `NoDisplay=true`. The program
+  stays installed, and it is still offered in "Open with" lists, because
+  `NoDisplay` hides an entry from menus without removing it as a file handler.
+
+**Restore original** undoes whichever of these was done: it deletes your edited
+copy so the system entry is back, puts your file back as it was before the
+first edit, or returns a file you removed. An entry edited and then removed
+takes two restores, the second giving the original back.
+
+The saved originals are in `~/.local/share/nexus-menu/backups`, beside the
+applications folder (with `--dir`, in `nexus-menu/backups` beside that folder).
+If a package updates a system entry after you edited it, the entry is flagged
+**System entry changed since your edit**, because your copy is hiding the
+update; restore it to see the new version.
+
+The command line does not edit entries, and `nexus-menu remove` does not touch
+these copies. It deletes only what it generated.
 
 ### Updating
 
@@ -412,6 +465,10 @@ nexus-menu remove
 
 Editing a generated file is safe. Deleting the marker line opts it out of
 `remove` permanently.
+
+This command only deletes what it generated. To edit, hide or restore other
+entries, use the desktop app's **Entries** tab
+([Editing and removing entries](#editing-and-removing-entries)).
 
 ### Inspect the catalog
 
@@ -631,6 +688,12 @@ Matching is by, in order:
   run cannot leave a half-written entry in your menu.
 - `remove` only touches files carrying this tool's marker, inside directories
   you own. System and hand-written entries are never at risk.
+- The desktop app can edit and hide more than that, but it writes only inside
+  your own applications folder and a backup folder beside it. System files are
+  never written. Only a file carrying a nexus-menu marker is ever deleted; a
+  file of yours that you remove is moved to the backup folder instead, and the
+  original is saved before the first change to it. See
+  [Editing and removing entries](#editing-and-removing-entries).
 - `scan`, `orphans`, and every `--dry-run` write nothing at all.
 - Piped (non-interactive) stdin never auto-confirms; `--yes` is required.
 
@@ -680,7 +743,8 @@ a second crate that uses the same library.
 | Module | Responsibility |
 | --- | --- |
 | `src/lib.rs` | The library root; everything below except `main.rs` is in it |
-| `src/engine.rs` | Scanning, creating and removing entries, returning data instead of printing. The command line formats it; the desktop app shows it. Also the id-based interface the app uses, so the page never hands over a path |
+| `src/engine.rs` | Scanning and creating entries, returning data instead of printing. The command line formats it; the desktop app shows it. Also the id-based interface the app uses to scan and install, so the page never hands over a path |
+| `src/entries.rs` | Editing, hiding, removing and restoring any application entry, system ones included, by desktop file ID. A system file is never written: an edit of one is a marked copy in your own folder, and originals are saved to a backup folder first. Only a file with a nexus-menu marker is ever deleted |
 | `gui/` | The desktop app: a separate Cargo workspace (Tauri), so its dependency tree stays out of the command line's lockfile. `src/service.rs` is its logic, `src/updater.rs` the self-update, `ui/` the page |
 | `src/catalog.rs` | Template model; built-in catalog embedded via `include_str!`, overlaid by the user catalog |
 | `src/desktop.rs` | Desktop Entry parsing, `Exec` tokenising/unwrapping, entry rendering and escaping |
@@ -798,6 +862,13 @@ Only files this tool generated are touched.
 - The desktop app has been run on X11 (KDE Plasma) only; Wayland has not been
   tried. It is Linux x86_64 only, and the prebuilt one needs glibc 2.35 or
   newer.
+- Editing or hiding an entry in the desktop app changes files, and the menu
+  depends on your desktop picking the change up. The files were checked
+  (checksums, `desktop-file-validate`) and the app was driven in a real
+  window, but a change was not watched appearing in Plasma's own menu. If you
+  customised the menu with KMenuEdit, an entry can stay where you put it
+  whatever its Categories say. Entries can be edited in the app only; the
+  command line has no `edit`.
 
 ## Project documentation
 

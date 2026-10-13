@@ -1,4 +1,5 @@
-//! Scanning, creating and removing menu entries, returning data.
+//! Scanning and creating menu entries, returning data. Editing, hiding,
+//! removing and restoring existing ones is in [`crate::entries`].
 //!
 //! Nothing here prints. The command line formats these results for a
 //! terminal and the desktop app shows them in a window, so both do exactly
