@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-13
+
+The desktop app can now edit, hide and restore any menu entry, not only the
+ones nexus-menu made. The command line is unchanged, and it has no `edit`
+command. The library drops the functions the old Created tab used (see
+*Changed*), so anything that called them directly needs to move to `entries`.
+
 ### Added
 - **The desktop app can edit, hide and restore any menu entry.** The **Created**
   tab is now an **Entries** tab that lists every application entry on the
@@ -349,7 +356,8 @@ entries only for the ones missing.
   the program `flatpak` rather than the application, so a Flatpak install
   does not suppress an entry for a native binary of the same name.
 
-[Unreleased]: https://github.com/wlfogle/nexus-menu/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/wlfogle/nexus-menu/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/wlfogle/nexus-menu/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/wlfogle/nexus-menu/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/wlfogle/nexus-menu/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/wlfogle/nexus-menu/releases/tag/v0.1.0
